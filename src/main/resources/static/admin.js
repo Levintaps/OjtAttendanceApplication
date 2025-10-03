@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:8080/api';
+const API_BASE_URL = 'https://ojtattendanceapplication-production.up.railway.app/api';
 let currentTab = 'dashboard';
 let currentNotifications = [];
 let currentCorrectionRecord = null;

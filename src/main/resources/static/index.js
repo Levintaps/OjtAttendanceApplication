@@ -1,5 +1,5 @@
 // Configuration
-const API_BASE_URL = 'http://localhost:8080/api';
+const API_BASE_URL = 'https://ojtattendanceapplication-production.up.railway.app//api';
 const ADMIN_PASSWORD = 'Happy@Concentrix@2025!';
 const STANDARD_WORK_HOURS = 8;
 
