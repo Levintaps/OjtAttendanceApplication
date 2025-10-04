@@ -83,7 +83,7 @@ public class TotpService {
      */
     public String getCurrentCode(String secret) {
         try {
-            long currentBucket = Math.floorDiv(timeProvider.getTime(), 30);
+            long currentBucket = Math.floorDiv(timeProvider.getTime(), 15);
             return codeGenerator.generate(secret, currentBucket);
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate code: " + e.getMessage(), e);
