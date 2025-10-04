@@ -154,7 +154,7 @@ async function checkStudentStatus(idBadge) {
     try {
         // First check TOTP status
         const totpResponse = await fetch(`${API_BASE_URL}/totp/status/${idBadge}`);
-
+        
         if (!totpResponse.ok) {
             if (totpResponse.status === 404) {
                 showRegisterPrompt(idBadge);
@@ -165,7 +165,7 @@ async function checkStudentStatus(idBadge) {
         }
 
         const totpData = await totpResponse.json();
-
+        
         // If TOTP requires setup, show setup flow
         if (totpData.requiresSetup || !totpData.totpEnabled) {
             await showTotpSetup(idBadge, totpData);
@@ -191,7 +191,7 @@ async function checkStudentStatus(idBadge) {
 async function showTotpSetup(idBadge, totpData) {
     try {
         showLoading();
-
+        
         // Generate TOTP secret and QR code
         const setupResponse = await fetch(`${API_BASE_URL}/totp/setup/${idBadge}`, {
             method: 'POST'
@@ -202,7 +202,7 @@ async function showTotpSetup(idBadge, totpData) {
         }
 
         const setupData = await setupResponse.json();
-
+        
         hideLoading();
         displayTotpSetupModal(setupData);
 
@@ -214,21 +214,19 @@ async function showTotpSetup(idBadge, totpData) {
 
 function displayTotpSetupModal(setupData) {
     const modal = document.getElementById('totpSetupModal') || createTotpSetupModal();
-
+    
     const qrImage = modal.querySelector('#totpQrCode');
     const secretText = modal.querySelector('#totpSecretText');
-    const verifyButton = modal.querySelector('#verifyTotpBtn');
-
+    
     qrImage.src = setupData.qrCodeDataUrl;
     secretText.textContent = setupData.secret;
-
+    
     currentTotpStudent = setupData;
     totpSetupInProgress = true;
-
+    
     modal.classList.add('show');
     document.body.style.overflow = 'hidden';
-
-    // Focus on TOTP code input
+    
     modal.querySelector('#totpVerifyCode').focus();
 }
 
@@ -240,7 +238,7 @@ function createTotpSetupModal() {
         <div class="modal-content" style="max-width: 600px;">
             <button class="modal-close" onclick="closeTotpSetupModal()">×</button>
             <div class="modal-header">
-                <h3>🔐 Security Setup Required</h3>
+                <h3>🔒 Security Setup Required</h3>
                 <p>Set up Google Authenticator for secure attendance</p>
             </div>
             <div class="totp-setup-content" style="padding: 0 1rem;">
@@ -254,21 +252,17 @@ function createTotpSetupModal() {
                         <li>Enter the 6-digit code shown in the app</li>
                     </ol>
                 </div>
-
+                
                 <div class="qr-code-container" style="text-align: center; margin: 2rem 0;">
                     <div style="background: white; padding: 2rem; border-radius: var(--border-radius-lg); display: inline-block; box-shadow: var(--shadow-md);">
                         <img id="totpQrCode" src="" alt="QR Code" style="width: 250px; height: 250px; display: block;">
-                    </div>
-                    <div style="margin-top: 1rem;">
-                        <p style="font-size: 0.85rem; color: var(--text-muted);">Manual entry code:</p>
-                        <code id="totpSecretText" style="background: var(--bg-tertiary); padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.9rem; display: inline-block; margin-top: 0.5rem;"></code>
                     </div>
                 </div>
 
                 <form id="totpVerifyForm" onsubmit="verifyTotpSetup(event)">
                     <div class="form-group">
                         <label for="totpVerifyCode">Enter 6-digit code from your app:</label>
-                        <input type="text" id="totpVerifyCode" maxlength="6" placeholder="000000"
+                        <input type="text" id="totpVerifyCode" maxlength="6" placeholder="000000" 
                             style="text-align: center; font-size: 1.5rem; letter-spacing: 0.5em; font-weight: 700;" required>
                     </div>
                     <div class="modal-actions">
@@ -280,21 +274,20 @@ function createTotpSetupModal() {
         </div>
     `;
     document.body.appendChild(modal);
-
-    // Format input to numbers only
+    
     const codeInput = modal.querySelector('#totpVerifyCode');
     codeInput.addEventListener('input', function() {
         this.value = this.value.replace(/\D/g, '').slice(0, 6);
     });
-
+    
     return modal;
 }
 
 async function verifyTotpSetup(event) {
     event.preventDefault();
-
+    
     const totpCode = document.getElementById('totpVerifyCode').value.trim();
-
+    
     if (totpCode.length !== 6) {
         showAlert('Please enter a valid 6-digit code', 'error');
         return;
@@ -315,8 +308,7 @@ async function verifyTotpSetup(event) {
             hideLoading();
             closeTotpSetupModal();
             showAlert('Authentication setup complete! You can now log attendance.', 'success');
-
-            // Refresh student status
+            
             setTimeout(() => {
                 checkStudentStatus(currentTotpStudent.idBadge);
             }, 500);
@@ -341,8 +333,7 @@ function closeTotpSetupModal() {
         document.getElementById('totpVerifyForm').reset();
         totpSetupInProgress = false;
         currentTotpStudent = null;
-
-        // Clear ID input
+        
         document.getElementById('idBadge').value = '';
         resetButtonStates();
     }
@@ -402,10 +393,10 @@ async function updateButtonStates(studentData = null) {
         stopTodayHoursTimer();
         statusText.textContent = 'Ready to Time In';
         statusText.style.color = 'var(--text-primary)';
-
+        
         const totalHours = parseFloat(studentData.totalAccumulatedHours || 0);
         const requiredHours = studentData.requiredHours || 0;
-
+        
         if (requiredHours > 0 && totalHours < requiredHours) {
             const remainingHours = requiredHours - totalHours;
             const estimatedDays = calculateEstimatedDays(remainingHours, studentData);
@@ -422,25 +413,21 @@ async function updateButtonStates(studentData = null) {
 
 function calculateEstimatedDays(remainingHours, studentData) {
     if (remainingHours <= 0) return 0;
-
-    // Calculate average daily hours from recent history
+    
     let averageDailyHours = STANDARD_WORK_HOURS;
-
+    
     if (studentData.attendanceHistory && studentData.attendanceHistory.length > 0) {
-        // Get records from last 10 days
         const recentRecords = studentData.attendanceHistory.slice(0, 10);
         const totalRecentHours = recentRecords.reduce((sum, record) => {
             return sum + (parseFloat(record.totalHours) || 0);
         }, 0);
-
+        
         if (recentRecords.length > 0) {
             averageDailyHours = totalRecentHours / recentRecords.length;
         }
     }
-
-    // Use whichever is higher: standard hours or average (but minimum 4 hours)
+    
     const hoursPerDay = Math.max(averageDailyHours, STANDARD_WORK_HOURS, 4);
-
     const estimatedDays = Math.ceil(remainingHours / hoursPerDay);
     return estimatedDays;
 }
@@ -493,9 +480,9 @@ function showRegisterPrompt(idBadge) {
     statusTime.innerHTML = `<button class="btn btn-primary" onclick="showRegisterModal('${idBadge}')" style="margin-top: 0.5rem; padding: 0.5rem 1rem; font-size: 0.85rem;">Register Now</button>`;
 }
 
-// Attendance Actions
+// Attendance Actions - FIXED TIME IN
 async function performTimeIn() {
-    const idBadge = document.getElementById('idBadge').value.trim();
+    const idBadge = elements.idBadge().value.trim();
 
     if (!validateIdBadge(idBadge)) return;
     if (actionCooldown) {
@@ -503,7 +490,7 @@ async function performTimeIn() {
         return;
     }
 
-    // Show TOTP input modal
+    // Show TOTP verification for Time In
     showTotpVerificationModal('TIME_IN');
 }
 
@@ -523,8 +510,9 @@ function updateUIAfterTimeIn(data) {
     startTodayHoursTimer();
 }
 
+// FIXED TIME OUT - Shows task summary first, then TOTP
 async function performTimeOut() {
-    const idBadge = document.getElementById('idBadge').value.trim();
+    const idBadge = elements.idBadge().value.trim();
 
     if (!validateIdBadge(idBadge)) return;
     if (actionCooldown) {
@@ -532,16 +520,20 @@ async function performTimeOut() {
         return;
     }
 
-    // Check for existing tasks first
+    // Get existing tasks first
     const existingTasks = await getCurrentSessionTasks(idBadge);
 
     if (existingTasks.length > 0) {
-        showTaskSummaryModalWithTotp(existingTasks);
+        // Show task summary modal (old flow)
+        showTaskSummaryModal(existingTasks);
     } else {
-        showTotpVerificationModal('TIME_OUT');
+        // No tasks, show regular task input modal
+        pendingTimeOut = true;
+        showTaskModal();
     }
 }
 
+// Create TOTP verify modal
 function createTotpVerifyModal() {
     const modal = document.createElement('div');
     modal.id = 'totpVerifyModal';
@@ -550,21 +542,16 @@ function createTotpVerifyModal() {
         <div class="modal-content">
             <button class="modal-close" onclick="closeTotpVerifyModal()">×</button>
             <div class="modal-header">
-                <h3>Time In - Enter Code</h3>
+                <h3>Enter Authentication Code</h3>
                 <p>Enter the 6-digit code from your Google Authenticator app</p>
             </div>
             <form id="totpActionForm" onsubmit="submitWithTotp(event)">
                 <div class="form-group">
                     <label for="totpActionCode">Authenticator Code:</label>
-                    <input type="text" id="totpActionCode" maxlength="6" placeholder="000000"
+                    <input type="text" id="totpActionCode" maxlength="6" placeholder="000000" 
                         style="text-align: center; font-size: 2rem; letter-spacing: 0.5em; font-weight: 700;" required>
                 </div>
-                <div id="totpTasksSection" style="display: none;">
-                    <div class="form-group">
-                        <label for="totpTasksCompleted">Tasks Completed (for Time Out):</label>
-                        <textarea id="totpTasksCompleted" placeholder="Describe your tasks and activities..."></textarea>
-                    </div>
-                </div>
+                <input type="hidden" id="totpTasksData" value="">
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeTotpVerifyModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary">Verify & Continue</button>
@@ -573,35 +560,28 @@ function createTotpVerifyModal() {
         </div>
     `;
     document.body.appendChild(modal);
-
+    
     const codeInput = modal.querySelector('#totpActionCode');
     codeInput.addEventListener('input', function() {
         this.value = this.value.replace(/\D/g, '').slice(0, 6);
     });
-
+    
     return modal;
 }
 
+// Submit with TOTP verification
 async function submitWithTotp(event) {
     event.preventDefault();
-
-    const idBadge = document.getElementById('idBadge').value.trim();
+    
+    const idBadge = elements.idBadge().value.trim();
     const totpCode = document.getElementById('totpActionCode').value.trim();
     const modal = document.getElementById('totpVerifyModal');
     const action = modal.dataset.action;
-
+    const tasksCompleted = document.getElementById('totpTasksData').value || '';
+    
     if (totpCode.length !== 6) {
         showAlert('Please enter a valid 6-digit code', 'error');
         return;
-    }
-
-    let tasksCompleted = '';
-    if (action === 'TIME_OUT') {
-        tasksCompleted = document.getElementById('totpTasksCompleted').value.trim();
-        if (!tasksCompleted || tasksCompleted.length < 10) {
-            showAlert('Please provide detailed task description (minimum 10 characters)', 'error');
-            return;
-        }
     }
 
     showLoading();
@@ -630,9 +610,8 @@ async function submitWithTotp(event) {
             }
         } else {
             showAlert(data.message || 'Authentication failed', 'error');
-            // Re-show modal if TOTP was wrong
             if (data.message && data.message.includes('Invalid TOTP')) {
-                setTimeout(() => showTotpVerificationModal(action), 1000);
+                setTimeout(() => showTotpVerificationModal(action, tasksCompleted), 1000);
             }
         }
 
@@ -643,51 +622,34 @@ async function submitWithTotp(event) {
     }
 }
 
-function showTotpVerificationModal(action) {
+function showTotpVerificationModal(action, tasksCompleted = '') {
     const modal = document.getElementById('totpVerifyModal') || createTotpVerifyModal();
     const actionText = action === 'TIME_IN' ? 'Time In' : 'Time Out';
-
+    
     modal.querySelector('.modal-header h3').textContent = `${actionText} - Enter Code`;
     modal.querySelector('.modal-header p').textContent = 'Enter the 6-digit code from your Google Authenticator app';
-
+    
     modal.dataset.action = action;
+    document.getElementById('totpTasksData').value = tasksCompleted;
+    
     modal.classList.add('show');
     document.body.style.overflow = 'hidden';
-
+    
+    modal.querySelector('#totpActionCode').value = '';
     modal.querySelector('#totpActionCode').focus();
 }
 
+// Original submitTimeOut for legacy task modal
 async function submitTimeOut() {
     const idBadge = elements.idBadge().value.trim();
     const tasksCompleted = document.getElementById('tasksCompleted').value.trim();
 
     if (!validateTimeOutForm(tasksCompleted)) return;
 
-    showLoading();
     closeTaskModal();
-    setActionCooldown();
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/attendance/log`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idBadge: idBadge, tasksCompleted: tasksCompleted })
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-            handleSuccessfulTimeOut(data);
-        } else {
-            handleTimeOutError(data);
-        }
-
-    } catch (error) {
-        handleTimeOutError({ message: 'Network error. Please try again.' });
-    } finally {
-        hideLoading();
-        pendingTimeOut = false;
-    }
+    
+    // Now show TOTP modal with the tasks
+    showTotpVerificationModal('TIME_OUT', tasksCompleted);
 }
 
 function closeTotpVerifyModal() {
@@ -696,20 +658,7 @@ function closeTotpVerifyModal() {
         modal.classList.remove('show');
         document.body.style.overflow = '';
         document.getElementById('totpActionForm').reset();
-        document.getElementById('totpTasksSection').style.display = 'none';
     }
-}
-
-function showTaskSummaryModalWithTotp(tasks) {
-    showTotpVerificationModal('TIME_OUT');
-
-    // Show tasks section
-    const tasksSection = document.getElementById('totpTasksSection');
-    tasksSection.style.display = 'block';
-
-    const modal = document.getElementById('totpVerifyModal');
-    const header = modal.querySelector('.modal-header p');
-    header.innerHTML = `You've logged ${tasks.length} task(s) today. Add any missing tasks before timing out.`;
 }
 
 function handleSuccessfulTimeOut(data) {
@@ -741,7 +690,6 @@ function handleTimeOutError(data) {
 async function checkCanLogTasks(idBadge) {
     try {
         const response = await fetch(`${API_BASE_URL}/attendance/can-log-tasks/${idBadge}`);
-
         if (response.ok) {
             const data = await response.json();
             return data;
@@ -756,9 +704,7 @@ async function checkCanLogTasks(idBadge) {
 
 async function addTask() {
     const idBadge = elements.idBadge().value.trim();
-
     if (!validateIdBadge(idBadge)) return;
-
     showAddTaskModal();
 }
 
@@ -813,9 +759,7 @@ async function submitTask(event) {
 
         const response = await fetch(`${API_BASE_URL}/tasks/add`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody)
         });
 
@@ -826,8 +770,7 @@ async function submitTask(event) {
                     const dashboardData = await updatedDashboard.json();
                     const taskCount = dashboardData.todayTasksCount || 'N/A';
                     showAlert(`Task logged successfully! Total tasks today: ${taskCount}`, 'success');
-
-                    // Update dashboard if it's open
+                    
                     if (elements.dashboardCard().classList.contains('show')) {
                         await viewDashboard();
                     }
@@ -839,7 +782,6 @@ async function submitTask(event) {
             }
         } else {
             const errorText = await response.text();
-
             let errorMessage = 'Failed to log task';
             try {
                 const errorData = JSON.parse(errorText);
@@ -847,7 +789,6 @@ async function submitTask(event) {
             } catch (e) {
                 errorMessage = errorText || errorMessage;
             }
-
             showAlert(errorMessage, 'error');
         }
     } catch (error) {
@@ -995,7 +936,6 @@ async function displayDashboard(data) {
 
     currentStatus.textContent = actualStatus;
 
-    // Fetch fresh student data to get required hours
     let studentFullData = data;
     try {
         const studentResponse = await fetch(`${API_BASE_URL}/students/all`);
@@ -1010,28 +950,25 @@ async function displayDashboard(data) {
         console.error('Failed to fetch student full data:', error);
     }
 
-    // Get hours values - ensure they're properly parsed
     const totalHoursValue = parseFloat(studentFullData.totalAccumulatedHours || 0);
     const requiredHoursValue = studentFullData.requiredHours ? parseFloat(studentFullData.requiredHours) : 0;
     const hasRequiredHours = requiredHoursValue > 0;
 
-    // Update dynamic metric based on status
     if (actualStatus === 'TIMED_IN') {
         dynamicLabel.textContent = 'Total Tasks Today';
         const taskCount = studentFullData.todayTasksCount || 0;
         dynamicValue.textContent = taskCount;
         dynamicValue.style.color = 'var(--text-primary)';
-
+        
         startTaskCountUpdate(studentFullData.idBadge);
-
+        
         if (activeRecord) {
             currentTimeInTimestamp = new Date(activeRecord.timeIn);
             startTodayHoursTimer();
         }
     } else {
         stopTaskCountUpdate();
-
-        // When timed out, show days to complete
+        
         if (hasRequiredHours && totalHoursValue < requiredHoursValue) {
             dynamicLabel.textContent = 'Days to Complete';
             const remainingHours = requiredHoursValue - totalHoursValue;
@@ -1043,34 +980,28 @@ async function displayDashboard(data) {
             dynamicValue.textContent = 'Complete!';
             dynamicValue.style.color = 'var(--success-color)';
         } else {
-            // No required hours set
             dynamicLabel.textContent = 'Required Hours';
             dynamicValue.textContent = 'Not Set';
             dynamicValue.style.color = 'var(--text-muted)';
         }
     }
 
-    // Update total hours display
     totalHours.textContent = formatHoursMinutes(totalHoursValue);
-
-    // Update required hours display
+    
     if (hasRequiredHours) {
         requiredHours.textContent = formatHoursMinutes(requiredHoursValue);
     } else {
         requiredHours.textContent = 'N/A';
     }
 
-    // Update progress bar
     if (hasRequiredHours) {
         const progressPercent = Math.min((totalHoursValue / requiredHoursValue) * 100, 100);
         progressFill.style.width = progressPercent.toFixed(1) + '%';
         progressPercentage.textContent = progressPercent.toFixed(1) + '%';
-
-        // Apply color class based on progress - matching admin panel
+        
         const progressClass = getProgressClass(progressPercent);
         progressFill.className = `progress-fill-dashboard ${progressClass}`;
     } else {
-        // No required hours - show empty bar
         progressFill.style.width = '0%';
         progressPercentage.textContent = 'N/A';
         progressFill.className = 'progress-fill-dashboard';
@@ -1115,7 +1046,7 @@ function startTaskCountUpdate(idBadge) {
     if (taskCountInterval) {
         clearInterval(taskCountInterval);
     }
-
+    
     taskCountInterval = setInterval(async () => {
         try {
             const response = await fetch(`${API_BASE_URL}/students/dashboard/${idBadge}`);
@@ -1129,7 +1060,7 @@ function startTaskCountUpdate(idBadge) {
         } catch (error) {
             console.error('Failed to update task count:', error);
         }
-    }, 30000); // Update every 30 seconds
+    }, 30000);
 }
 
 function stopTaskCountUpdate() {
@@ -1319,6 +1250,7 @@ function closeAllModals() {
     pendingTimeOut = false;
 }
 
+// FIXED: Task Summary Modal - Shows tasks review before TOTP
 function showTaskSummaryModal(tasks) {
     const modal = elements.taskModal();
     const modalHeader = modal.querySelector('.modal-header h3');
@@ -1346,7 +1278,7 @@ function showTaskSummaryModal(tasks) {
         </div>
         <div class="modal-actions">
             <button type="button" class="btn btn-secondary" onclick="closeTaskModal()">Cancel</button>
-            <button type="button" class="btn btn-primary" onclick="submitEnhancedTimeOut()">Time Out</button>
+            <button type="button" class="btn btn-primary" onclick="submitEnhancedTimeOut()">Continue to Time Out</button>
         </div>
     `;
 
@@ -1355,38 +1287,14 @@ function showTaskSummaryModal(tasks) {
     document.body.style.overflow = 'hidden';
 }
 
+// FIXED: Enhanced Time Out - Shows TOTP after task review
 async function submitEnhancedTimeOut() {
-    const idBadge = elements.idBadge().value.trim();
     const additionalTasks = document.getElementById('additionalTasks')?.value.trim() || '';
-
-    showLoading();
+    
     closeTaskModal();
-    setActionCooldown();
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/attendance/log`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                idBadge: idBadge,
-                tasksCompleted: additionalTasks
-            })
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-            handleSuccessfulTimeOut(data);
-        } else {
-            handleTimeOutError(data);
-        }
-
-    } catch (error) {
-        handleTimeOutError({ message: 'Network error. Please try again.' });
-    } finally {
-        hideLoading();
-        pendingTimeOut = false;
-    }
+    
+    // Show TOTP modal with the additional tasks
+    showTotpVerificationModal('TIME_OUT', additionalTasks);
 }
 
 // Validation Functions
@@ -1622,4 +1530,4 @@ if (!document.getElementById('totp-custom-styles')) {
     document.head.appendChild(styleSheet);
 }
 
-console.log('Enhanced OJT Attendance System Loaded');
+console.log('Enhanced OJT Attendance System with TOTP Loaded');
