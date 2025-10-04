@@ -257,6 +257,10 @@ function createTotpSetupModal() {
                     <div style="background: white; padding: 2rem; border-radius: var(--border-radius-lg); display: inline-block; box-shadow: var(--shadow-md);">
                         <img id="totpQrCode" src="" alt="QR Code" style="width: 250px; height: 250px; display: block;">
                     </div>
+                    <div style="margin-top: 1rem;">
+                        <p style="font-size: 0.85rem; color: var(--text-muted);">Manual entry code:</p>
+                        <code id="totpSecretText" style="background: var(--bg-tertiary); padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.9rem; display: inline-block; margin-top: 0.5rem;"></code>
+                    </div>
                 </div>
 
                 <form id="totpVerifyForm" onsubmit="verifyTotpSetup(event)">
