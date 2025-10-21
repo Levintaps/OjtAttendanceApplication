@@ -21,8 +21,6 @@ public interface AttendanceRecordRepository extends JpaRepository<AttendanceReco
 
     List<AttendanceRecord> findByStudentOrderByAttendanceDateDesc(Student student);
 
-    List<AttendanceRecord> findByAttendanceDateOrderByTimeInAsc(LocalDate date);
-
     List<AttendanceRecord> findByStudentAndAttendanceDate(Student student, LocalDate date);
 
 
@@ -68,4 +66,8 @@ public interface AttendanceRecordRepository extends JpaRepository<AttendanceReco
             "ORDER BY ar.workDate DESC, ar.timeIn ASC")
     List<AttendanceRecord> findByWorkDateRange(@Param("startDate") LocalDate startDate,
                                                @Param("endDate") LocalDate endDate);
+
+    @Query("SELECT ar FROM AttendanceRecord ar WHERE ar.attendanceDate = :date " +
+            "ORDER BY ar.timeIn ASC")
+    List<AttendanceRecord> findByAttendanceDateOrderByTimeInAsc(@Param("date") LocalDate date);
 }

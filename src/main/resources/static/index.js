@@ -1,6 +1,5 @@
 // Configuration
-const API_BASE_URL = 'https://ojtattendanceapplication-production.up.railway.app/api';
-const ADMIN_PASSWORD = 'Happy@Concentrix@2025!';
+const API_BASE_URL = 'http://localhost:8080/api';
 const STANDARD_WORK_HOURS = 8;
 
 // Global variables
@@ -28,7 +27,7 @@ const elements = {
     timeOutBtn: () => document.getElementById('timeOutBtn'),
     validationWarning: () => document.getElementById('validationWarning'),
     loading: () => document.getElementById('loading'),
-    dashboardCard: () => document.getElementById('dashboardCard'),
+    dashboardCard: () => document.getElementById('dashboardModal'),
     registerModal: () => document.getElementById('registerModal'),
     taskModal: () => document.getElementById('taskModal'),
     adminModal: () => document.getElementById('adminModal'),
@@ -172,7 +171,31 @@ async function checkStudentStatus(idBadge) {
             return;
         }
 
-        // TOTP is enabled, proceed with normal flow
+
+        try {
+            const sessionResponse = await fetch(`${API_BASE_URL}/attendance/session/${idBadge}`);
+            if (sessionResponse.ok) {
+                // Has active session - show time out button
+                const sessionData = await sessionResponse.json();
+                const dashboardData = {
+                    currentStatus: 'TIMED_IN',
+                    attendanceHistory: [{
+                        timeIn: sessionData.timeIn,
+                        timeOut: null,
+                        status: 'TIMED_IN'
+                    }],
+                    todayTasksCount: sessionData.tasksLoggedCount
+                };
+                currentStudentData = dashboardData;
+                await updateButtonStates(dashboardData);
+                return;
+            }
+        } catch (sessionError) {
+            // No active session, continue to dashboard check
+            console.log('No active session found, checking dashboard');
+        }
+
+        // No active session - get dashboard data
         const dashboardResponse = await fetch(`${API_BASE_URL}/students/dashboard/${idBadge}`);
         if (!dashboardResponse.ok) {
             throw new Error('Unable to verify student status');
@@ -864,23 +887,44 @@ function checkAdminAccess() {
     showAdminModal();
 }
 
-function submitAdminAccess() {
+async function submitAdminAccess() {
+    const adminUsername = document.getElementById('adminUsername').value.trim();
     const adminPassword = document.getElementById('adminPassword').value.trim();
 
-    if (!adminPassword) {
-        showAlert('Please enter the administrator password', 'error');
+    if (!adminUsername || !adminPassword) {
+        showAlert('Please enter username and password', 'error');
         return;
     }
 
-    if (adminPassword === ADMIN_PASSWORD) {
-        closeAdminModal();
-        showAlert('Welcome, Administrator! Redirecting...', 'success');
-        setTimeout(() => {
-            window.location.href = 'admin.html?authenticated=true&admin=System Administrator';
-        }, 1500);
-    } else {
-        showAlert('Invalid admin password. Access denied.', 'error');
-        document.getElementById('adminPassword').focus();
+    showLoading();
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: adminUsername,
+                password: adminPassword
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            closeAdminModal();
+            showAlert('Welcome, Administrator! Redirecting...', 'success');
+            setTimeout(() => {
+                window.location.href = `admin.html?authenticated=true&admin=${encodeURIComponent(data.username)}`;
+            }, 1500);
+        } else {
+            showAlert(data.message || 'Invalid credentials. Access denied.', 'error');
+            document.getElementById('adminPassword').focus();
+        }
+
+    } catch (error) {
+        showAlert('Login failed. Please check your connection.', 'error');
+    } finally {
+        hideLoading();
     }
 }
 
@@ -915,7 +959,7 @@ async function viewDashboard() {
 }
 
 async function displayDashboard(data) {
-    const dashboardCard = elements.dashboardCard();
+    const dashboardModal = document.getElementById('dashboardModal');
     const dashboardTitle = document.getElementById('dashboardTitle');
     const studentInfo = document.getElementById('studentInfo');
     const currentStatus = document.getElementById('currentStatus');
@@ -925,8 +969,9 @@ async function displayDashboard(data) {
     const requiredHours = document.getElementById('requiredHours');
     const progressFill = document.getElementById('progressFill');
     const progressPercentage = document.getElementById('progressPercentage');
+    const modalActions = document.querySelector('#dashboardModal .modal-actions');
 
-    dashboardTitle.textContent = `Welcome, ${data.fullName}`;
+    dashboardTitle.textContent = `${getGreeting()}, ${data.fullName}`;
 
     let schoolName = data.school || 'N/A';
     if (!data.school && data.idBadge) {
@@ -1011,8 +1056,46 @@ async function displayDashboard(data) {
         progressFill.className = 'progress-fill-dashboard';
     }
 
-    dashboardCard.classList.add('show');
+    if (!document.getElementById('weeklyReportBtn')) {
+            const weeklyBtn = document.createElement('button');
+            weeklyBtn.id = 'weeklyReportBtn';
+            weeklyBtn.className = 'btn btn-info';
+            weeklyBtn.innerHTML = '📄 Weekly Report';
+            weeklyBtn.onclick = () => showWeeklyReportOptions();
+
+            modalActions.insertBefore(weeklyBtn, modalActions.firstChild);
+    }
+
+    dashboardModal.classList.add('show');
+    document.body.style.overflow = 'hidden';
     displayAttendanceHistory(studentFullData.attendanceHistory);
+}
+
+function getGreeting() {
+    const hour = new Date().getHours();
+    const greetings = {
+        night: ['Good evening', 'Hello', 'Welcome back'],
+        morning: ['Good morning', 'Hi there', 'Welcome'],
+        noon: ['Good noon', 'Hello', 'Welcome'],
+        afternoon: ['Good afternoon', 'Hi', 'Welcome back'],
+        evening: ['Good evening', 'Hello', 'Welcome']
+    };
+
+    let timeOfDay;
+    if (hour >= 5 && hour < 12) {
+        timeOfDay = 'morning';
+    } else if (hour >= 12 && hour < 13) {
+        timeOfDay = 'noon';
+    } else if (hour >= 13 && hour < 18) {
+        timeOfDay = 'afternoon';
+    } else if (hour >= 18 && hour < 21) {
+        timeOfDay = 'evening';
+    } else {
+        timeOfDay = 'night';
+    }
+
+    const greetingArray = greetings[timeOfDay];
+    return greetingArray[Math.floor(Math.random() * greetingArray.length)];
 }
 
 function formatHoursMinutes(decimalHours) {
@@ -1168,12 +1251,16 @@ async function downloadReport() {
 }
 
 function hideDashboard() {
-    elements.dashboardCard().classList.remove('show');
-    const historySection = document.getElementById('historySection');
-    if (historySection) {
-        historySection.classList.remove('show');
+    const modal = document.getElementById('dashboardModal');
+    if (modal) {
+        modal.classList.remove('show');
+        document.body.style.overflow = '';
     }
     stopTaskCountUpdate();
+}
+
+function closeDashboardModal() {
+    hideDashboard();
 }
 
 // Modal Management
@@ -1499,7 +1586,7 @@ function updateTodayHours() {
     const historyBody = document.getElementById('historyBody');
     if (historyBody) {
         const activeRow = historyBody.querySelector('tr:first-child td:nth-child(3)');
-        if (activeRow && activeRow.innerHTML.includes('0.0h')) {
+        if (activeRow && activeRow.innerHTML.includes('0h')) {
             activeRow.innerHTML = `<strong>${timeString}</strong>`;
         }
     }
@@ -1534,4 +1621,462 @@ if (!document.getElementById('totp-custom-styles')) {
     document.head.appendChild(styleSheet);
 }
 
-console.log('Enhanced OJT Attendance System with TOTP Loaded');
+async function downloadWeeklyReport(weekType = 'current') {
+    const idBadge = elements.idBadge().value.trim();
+
+    if (!validateIdBadge(idBadge)) {
+        showAlert('Please enter your ID badge', 'error');
+        return;
+    }
+
+    showLoading();
+
+    try {
+        let url;
+
+        if (weekType === 'current') {
+            // Current week (Monday to Sunday)
+            url = `${API_BASE_URL}/reports/weekly-pdf/${idBadge}/current-week`;
+        } else if (weekType === 'custom') {
+            // Custom date range
+            const startDate = prompt('Enter start date (YYYY-MM-DD):');
+            const endDate = prompt('Enter end date (YYYY-MM-DD):');
+
+            if (!startDate || !endDate) return;
+
+            url = `${API_BASE_URL}/reports/weekly-pdf/${idBadge}?startDate=${startDate}&endDate=${endDate}`;
+        }
+
+        const response = await fetch(url);
+
+        if (response.ok) {
+            const blob = await response.blob();
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = `weekly-report-${idBadge}-${new Date().toISOString().split('T')[0]}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(downloadUrl);
+
+            showAlert('Weekly report downloaded successfully!', 'success');
+        } else {
+            showAlert('Failed to generate weekly report', 'error');
+        }
+
+    } catch (error) {
+        showAlert('Failed to download report: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function showWeeklyReportOptions() {
+    const idBadge = elements.idBadge().value.trim();
+
+    if (!validateIdBadge(idBadge)) {
+        showAlert('Please enter your ID badge first', 'error');
+        return;
+    }
+
+    showLoading();
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/students/dashboard/${idBadge}`);
+
+        if (!response.ok) {
+            throw new Error('Failed to load student data');
+        }
+
+        const studentData = await response.json();
+
+        const studentResponse = await fetch(`${API_BASE_URL}/students/all`);
+        if (!studentResponse.ok) {
+            throw new Error('Failed to load student information');
+        }
+
+        const allStudents = await studentResponse.json();
+        const currentStudent = allStudents.find(s => s.idBadge === idBadge);
+
+        if (!currentStudent) {
+            throw new Error('Student not found');
+        }
+
+        hideLoading();
+        displayWeeklyReportModal(currentStudent);
+
+    } catch (error) {
+        hideLoading();
+        showAlert('Failed to load weekly report options: ' + error.message, 'error');
+    }
+}
+
+function displayWeeklyReportModal(student) {
+    const ojtStartDate = student.ojtStartDate ? new Date(student.ojtStartDate) : new Date(student.registrationDate);
+    const totalWeeks = calculateTotalCalendarWeeks(ojtStartDate);
+
+    const modalHTML = `
+        <div class="modal" id="weeklyReportOptionsModal" style="display: flex;">
+            <div class="modal-content" style="max-width: 600px;">
+                <button class="modal-close" onclick="closeWeeklyReportOptions()">×</button>
+                <div class="modal-header">
+                    <h3>📄 Download Weekly Report</h3>
+                    <p>Select which week you want to download (Calendar weeks: Monday-Sunday)</p>
+                </div>
+                <div style="padding: 0 1rem;">
+                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: var(--border-radius-lg); margin-bottom: 1.5rem;">
+                        <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                            <strong>OJT Start Date:</strong> ${formatRegistrationDate(ojtStartDate)}
+                        </div>
+                        <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                            <strong>First Week Monday:</strong> ${formatRegistrationDate(getMondayOfWeek(ojtStartDate))}
+                        </div>
+                        <div style="font-size: 0.9rem; color: var(--text-secondary);">
+                            <strong>Available Weeks:</strong> Week 1 to Week ${totalWeeks}
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="weekSelector">Select Week Number:</label>
+                        <select id="weekSelector" class="week-selector" style="width: 100%; padding: 1rem; border: 2px solid var(--border-color); border-radius: var(--border-radius-lg); font-size: 1rem; background: var(--bg-secondary);">
+                            ${generateWeekOptions(totalWeeks)}
+                        </select>
+                    </div>
+
+                    <div class="week-info" id="weekInfo" style="background: var(--bg-tertiary); padding: 1rem; border-radius: var(--border-radius-lg); margin-top: 1rem; font-size: 0.85rem; color: var(--text-secondary);">
+                        <strong>Selected Week Range:</strong> <span id="weekRange">Select a week</span>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1.5rem;">
+                        <button class="btn btn-primary" onclick="downloadWeeklyReportByNumber()">
+                            📥 Download Selected Week
+                        </button>
+                        <button class="btn btn-info" onclick="downloadCurrentWeek()">
+                            📅 Download Current Week
+                        </button>
+                        <button class="btn btn-secondary" onclick="showCustomDateRange()">
+                            🗓️ Custom Date Range
+                        </button>
+                        <button class="btn btn-secondary" onclick="closeWeeklyReportOptions()">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const existingModal = document.getElementById('weeklyReportOptionsModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = modalHTML;
+    document.body.appendChild(tempDiv.firstElementChild);
+
+    const weekSelector = document.getElementById('weekSelector');
+    weekSelector.addEventListener('change', function() {
+        updateWeekRange(ojtStartDate, parseInt(this.value));
+    });
+
+    updateWeekRange(ojtStartDate, 1);
+}
+
+function calculateTotalCalendarWeeks(ojtStartDate) {
+    const today = new Date();
+
+    const firstMonday = getMondayOfWeek(ojtStartDate);
+    const currentMonday = getMondayOfWeek(today);
+
+    const daysBetween = Math.floor((currentMonday - firstMonday) / (1000 * 60 * 60 * 24));
+    const weeksBetween = Math.floor(daysBetween / 7);
+
+    return weeksBetween + 1;
+}
+
+function getMondayOfWeek(date) {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    return new Date(d.setDate(diff));
+}
+
+function getWeekDateRange(ojtStartDate, weekNumber) {
+    const firstMonday = getMondayOfWeek(ojtStartDate);
+
+    const weekStart = new Date(firstMonday);
+    weekStart.setDate(firstMonday.getDate() + ((weekNumber - 1) * 7));
+
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+
+    return { start: weekStart, end: weekEnd };
+}
+
+function updateWeekRange(ojtStartDate, weekNumber) {
+    const weekRange = getWeekDateRange(ojtStartDate, weekNumber);
+    const weekStartDate = weekRange.start;
+    const weekEndDate = weekRange.end;
+
+    const today = new Date();
+    const isAvailable = weekStartDate <= today;
+
+    const weekRangeElement = document.getElementById('weekRange');
+    if (weekRangeElement) {
+        if (isAvailable) {
+            weekRangeElement.innerHTML = `Mon ${formatDateShort(weekStartDate)} - Sun ${formatDateShort(weekEndDate)} <span style="color: var(--success-color);">✓ Available</span>`;
+            weekRangeElement.style.color = 'var(--text-primary)';
+        } else {
+            weekRangeElement.innerHTML = `Mon ${formatDateShort(weekStartDate)} - Sun ${formatDateShort(weekEndDate)} <span style="color: var(--error-color);">✗ Not Available Yet</span>`;
+            weekRangeElement.style.color = 'var(--text-muted)';
+        }
+    }
+}
+
+
+
+async function downloadCurrentWeek() {
+    const idBadge = elements.idBadge().value.trim();
+
+    if (!validateIdBadge(idBadge)) {
+        showAlert('Please enter your ID badge', 'error');
+        return;
+    }
+
+    showLoading();
+    closeWeeklyReportOptions();
+
+    try {
+        const url = `${API_BASE_URL}/reports/weekly-pdf/${idBadge}/current-week`;
+        const response = await fetch(url);
+
+        if (response.ok) {
+            const blob = await response.blob();
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            const today = new Date().toISOString().split('T')[0];
+            a.download = `weekly-report-${idBadge}-current-${today}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(downloadUrl);
+
+            showAlert('Current week report downloaded successfully!', 'success');
+        } else {
+            throw new Error('Failed to generate current week report');
+        }
+
+    } catch (error) {
+        showAlert('Failed to download report: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function generateWeekOptions(totalWeeks) {
+    let options = '';
+    for (let i = 1; i <= totalWeeks; i++) {
+        options += `<option value="${i}">Week ${i}</option>`;
+    }
+    return options;
+}
+
+async function downloadWeeklyReportByNumber() {
+    const idBadge = elements.idBadge().value.trim();
+    const weekNumber = parseInt(document.getElementById('weekSelector').value);
+
+    if (!validateIdBadge(idBadge)) {
+        showAlert('Please enter your ID badge', 'error');
+        return;
+    }
+
+    showLoading();
+    closeWeeklyReportOptions();
+
+    try {
+        const url = `${API_BASE_URL}/reports/weekly-pdf/${idBadge}/week/${weekNumber}`;
+        const response = await fetch(url);
+
+        if (response.ok) {
+            const blob = await response.blob();
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = `weekly-report-${idBadge}-week${weekNumber}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(downloadUrl);
+
+            showAlert(`Week ${weekNumber} report downloaded successfully!`, 'success');
+        } else {
+            const errorText = await response.text();
+            throw new Error(errorText || 'Failed to generate weekly report');
+        }
+
+    } catch (error) {
+        showAlert('Failed to download report: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function closeWeeklyReportOptions() {
+    const modal = document.getElementById('weeklyReportOptionsModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+function showCustomDateRange() {
+    closeWeeklyReportOptions();
+
+    const modalHTML = `
+        <div class="modal" id="customDateRangeModal" style="display: flex;">
+            <div class="modal-content">
+                <button class="modal-close" onclick="closeCustomDateRange()">×</button>
+                <div class="modal-header">
+                    <h3>🗓️ Custom Date Range</h3>
+                    <p>Select start and end dates for your report</p>
+                </div>
+                <form id="customDateForm" onsubmit="downloadCustomDateRange(event)">
+                    <div class="form-group">
+                        <label for="customStartDate">Start Date:</label>
+                        <input type="date" id="customStartDate" class="form-control" required
+                            style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: var(--border-radius-lg); font-size: 1rem;">
+                    </div>
+                    <div class="form-group">
+                        <label for="customEndDate">End Date:</label>
+                        <input type="date" id="customEndDate" class="form-control" required
+                            style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: var(--border-radius-lg); font-size: 1rem;">
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeCustomDateRange()">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Download Report</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = modalHTML;
+    document.body.appendChild(tempDiv.firstElementChild);
+
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('customStartDate').max = today;
+    document.getElementById('customEndDate').max = today;
+}
+
+async function downloadCustomDateRange(event) {
+    event.preventDefault();
+
+    const idBadge = elements.idBadge().value.trim();
+    const startDate = document.getElementById('customStartDate').value;
+    const endDate = document.getElementById('customEndDate').value;
+
+    if (!validateIdBadge(idBadge)) {
+        showAlert('Please enter your ID badge', 'error');
+        return;
+    }
+
+    if (!startDate || !endDate) {
+        showAlert('Please select both start and end dates', 'error');
+        return;
+    }
+
+    if (new Date(startDate) > new Date(endDate)) {
+        showAlert('Start date must be before end date', 'error');
+        return;
+    }
+
+    showLoading();
+    closeCustomDateRange();
+
+    try {
+        const url = `${API_BASE_URL}/reports/weekly-pdf/${idBadge}?startDate=${startDate}&endDate=${endDate}`;
+        const response = await fetch(url);
+
+        if (response.ok) {
+            const blob = await response.blob();
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = `weekly-report-${idBadge}-${startDate}-to-${endDate}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(downloadUrl);
+
+            showAlert('Custom range report downloaded successfully!', 'success');
+        } else {
+            throw new Error('Failed to generate custom date range report');
+        }
+
+    } catch (error) {
+        showAlert('Failed to download report: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function closeCustomDateRange() {
+    const modal = document.getElementById('customDateRangeModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+function getCurrentWeekDates() {
+    const today = new Date();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - today.getDay() + 1);
+
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    const formatDate = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    return `${formatDate(monday)} - ${formatDate(sunday)}`;
+}
+
+/**
+ * Helper function to format registration date
+ */
+function formatRegistrationDate(date) {
+    return new Date(date).toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric'
+    });
+}
+
+/**
+ * Helper function to format date short
+ */
+function formatDateShort(date) {
+    return new Date(date).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+    });
+}
+
+/**
+ * Get current week date range string
+ */
+function getCurrentWeekDates() {
+    const today = new Date();
+    const monday = getMondayOfWeek(today);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    const formatDate = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    return `${formatDate(monday)} - ${formatDate(sunday)}`;
+}
+
+console.log('OJT Attendance System with TOTP Loaded');

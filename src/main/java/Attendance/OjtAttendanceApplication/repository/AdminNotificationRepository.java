@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.LocalDateTime;
 
 @Repository
 public interface AdminNotificationRepository extends JpaRepository<AdminNotification, Long> {
@@ -24,4 +25,10 @@ public interface AdminNotificationRepository extends JpaRepository<AdminNotifica
             AttendanceRecord attendanceRecord, NotificationType notificationType);
 
     List<AdminNotification> findByAttendanceRecord(AttendanceRecord attendanceRecord);
+
+    // Find read notifications
+    List<AdminNotification> findByIsReadTrue();
+
+    // Find old read notifications
+    List<AdminNotification> findByCreatedAtBeforeAndIsReadTrue(LocalDateTime cutoffDate);
 }

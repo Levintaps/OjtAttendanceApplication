@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
@@ -29,6 +30,9 @@ public class Student {
 
     @Column(name = "registration_date")
     private LocalDateTime registrationDate;
+
+    @Column(name = "ojt_start_date")
+    private LocalDate ojtStartDate;
 
     @Column(name = "total_accumulated_hours")
     private Double totalAccumulatedHours = 0.0;
@@ -166,6 +170,11 @@ public class Student {
         return totalAccumulatedHours >= requiredHours;
     }
 
+    public LocalDate getEffectiveStartDate() {
+        // Use OJT start date if set, otherwise fall back to registration date
+        return ojtStartDate != null ? ojtStartDate : registrationDate.toLocalDate();
+    }
+
     // GETTERS AND SETTERS
     public Long getId() {
         return id;
@@ -201,6 +210,14 @@ public class Student {
 
     public LocalDateTime getRegistrationDate() {
         return registrationDate;
+    }
+
+    public LocalDate getOjtStartDate() {
+        return ojtStartDate;
+    }
+
+    public void setOjtStartDate(LocalDate ojtStartDate) {
+        this.ojtStartDate = ojtStartDate;
     }
 
     public void setRegistrationDate(LocalDateTime registrationDate) {

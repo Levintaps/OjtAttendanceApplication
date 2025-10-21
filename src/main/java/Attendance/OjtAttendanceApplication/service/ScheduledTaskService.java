@@ -216,4 +216,18 @@ public class ScheduledTaskService {
 
         return rounded;
     }
+
+    @Scheduled(cron = "0 0 0 * * *") // Daily at midnight
+    public void autoCleanupOldNotifications() {
+        try {
+            logger.info("Starting scheduled task: autoCleanupOldNotifications");
+
+            // Delete read notifications older than 30 days
+            int deletedCount = notificationService.cleanupOldNotifications(30);
+
+            logger.info("Auto-cleanup completed: {} old notifications deleted", deletedCount);
+        } catch (Exception e) {
+            logger.error("Error in autoCleanupOldNotifications: {}", e.getMessage(), e);
+        }
+    }
 }

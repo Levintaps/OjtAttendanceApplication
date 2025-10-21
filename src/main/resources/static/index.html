@@ -3,15 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Concentrix IT - OJT Attendance System</title>
+    <title>TERA IT - OJT Attendance System</title>
     <link rel="stylesheet" href="index.css">
+    <link rel="stylesheet" href="notification.css">
 </head>
 <body>
 <div class="header">
     <div class="header-content">
         <div class="header-left">
             <div class="header-title-section">
-                <h1>Concentrix IT</h1>
+                <h1>IT Concentrix</h1>
                 <div class="subtitle">Intern Attendance Management System</div>
             </div>
         </div>
@@ -26,7 +27,7 @@
 
 <div class="container">
     <!-- Alert Container -->
-    <div id="alertContainer"></div>
+    <div id="toast-container"></div>
 
     <div class="main-card">
         <div class="welcome-section">
@@ -62,66 +63,6 @@
             <button class="btn btn-secondary" onclick="viewDashboard()">
                 View Dashboard
             </button>
-        </div>
-    </div>
-
-    <!-- Dashboard Card -->
-    <div id="dashboardCard" class="dashboard-card">
-        <div class="dashboard-header">
-            <h3 id="dashboardTitle">Student Dashboard</h3>
-            <div class="student-info" id="studentInfo">Loading...</div>
-        </div>
-
-        <div class="status-metrics">
-            <div class="status-metric">
-                <div class="label">Current Status</div>
-                <div class="value" id="currentStatus">-</div>
-            </div>
-            <div class="status-metric" id="dynamicMetric">
-                <div class="label" id="dynamicLabel">Total Tasks</div>
-                <div class="value" id="dynamicValue">0</div>
-            </div>
-            <div class="status-metric full-width">
-                <div class="label">Total Hours / Required Hours</div>
-                <div class="progress-container-dashboard">
-                    <div class="progress-bar-dashboard">
-                        <div class="progress-fill-dashboard" id="progressFill"></div>
-                    </div>
-                    <div class="progress-percentage" id="progressPercentage">0%</div>
-                </div>
-                <div class="value hours-display-dashboard" id="totalHoursDisplay">
-                    <span id="totalHours">0.0</span> / <span id="requiredHours">N/A</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="history-section" id="historySection">
-            <h4>Recent Attendance History</h4>
-            <div class="history-table-container">
-                <table class="history-table">
-                    <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Time In/Out</th>
-                        <th>Hours</th>
-                        <th>Status</th>
-                    </tr>
-                    </thead>
-                    <tbody id="historyBody">
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <div style="padding: 2rem; text-align: center; border-top: 2px solid var(--border-color);">
-            <div class="action-buttons">
-                <button class="btn btn-secondary" onclick="downloadReport()" style="flex: 1;">
-                    Download Report
-                </button>
-                <button class="btn btn-secondary" onclick="hideDashboard()" style="flex: 1;">
-                    Close Dashboard
-                </button>
-            </div>
         </div>
     </div>
 </div>
@@ -177,17 +118,24 @@
 </div>
 
 <!-- Admin Access Modal -->
+<!-- Admin Access Modal -->
 <div id="adminModal" class="modal">
     <div class="modal-content">
         <button class="modal-close" onclick="closeAdminModal()">×</button>
         <div class="modal-header">
-            <h3>Admin Access</h3>
-            <p>Enter administrator password</p>
+            <h3>🔐 Admin Access</h3>
+            <p>Enter administrator credentials</p>
         </div>
         <form id="adminForm">
             <div class="form-group">
+                <label for="adminUsername">Username:</label>
+                <input type="text" id="adminUsername" name="adminUsername"
+                       value="admin" placeholder="Enter username" required autocomplete="username">
+            </div>
+            <div class="form-group">
                 <label for="adminPassword">Password:</label>
-                <input type="password" id="adminPassword" name="adminPassword" placeholder="Enter admin password" required autocomplete="off">
+                <input type="password" id="adminPassword" name="adminPassword"
+                       placeholder="Enter password" required autocomplete="current-password">
             </div>
             <div class="modal-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeAdminModal()">Cancel</button>
@@ -218,6 +166,67 @@
     </div>
 </div>
 
+<!-- Dashboard Modal -->
+<div id="dashboardModal" class="modal">
+    <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;">
+        <button class="modal-close" onclick="closeDashboardModal()">×</button>
+        <div class="modal-header">
+            <h3 id="dashboardTitle">Student Dashboard</h3>
+            <div class="student-info" id="studentInfo">Loading...</div>
+        </div>
+
+        <div class="status-metrics">
+            <div class="status-metric">
+                <div class="label">Current Status</div>
+                <div class="value" id="currentStatus">-</div>
+            </div>
+            <div class="status-metric" id="dynamicMetric">
+                <div class="label" id="dynamicLabel">Total Tasks</div>
+                <div class="value" id="dynamicValue">0</div>
+            </div>
+            <div class="status-metric full-width">
+                <div class="label">Total Hours / Required Hours</div>
+                <div class="progress-container-dashboard">
+                    <div class="progress-bar-dashboard">
+                        <div class="progress-fill-dashboard" id="progressFill"></div>
+                    </div>
+                    <div class="progress-percentage" id="progressPercentage">0%</div>
+                </div>
+                <div class="value hours-display-dashboard" id="totalHoursDisplay">
+                    <span id="totalHours">0.0</span> / <span id="requiredHours">N/A</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="history-section" id="historySection">
+            <h4>Attendance History</h4>
+            <div class="history-table-container">
+                <table class="history-table">
+                    <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Time In/Out</th>
+                        <th>Hours</th>
+                        <th>Status</th>
+                    </tr>
+                    </thead>
+                    <tbody id="historyBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="modal-actions" style="border-top: 2px solid var(--border-color); padding-top: 1.5rem; margin-top: 1.5rem;">
+            <button class="btn btn-secondary" onclick="downloadReport()">
+                📊 Full Report (CSV)
+            </button>
+            <button class="btn btn-secondary" onclick="closeDashboardModal()">
+                Close
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- Loading Spinner -->
 <div id="loading" class="loading">
     <div class="spinner"></div>
@@ -225,5 +234,6 @@
 </div>
 
 <script src="index.js"></script>
+<script src="notification.js"></script>
 </body>
 </html>

@@ -6,6 +6,7 @@ import Attendance.OjtAttendanceApplication.entity.AttendanceRecord;
 import Attendance.OjtAttendanceApplication.entity.NotificationType;
 import Attendance.OjtAttendanceApplication.entity.Student;
 import Attendance.OjtAttendanceApplication.repository.AdminNotificationRepository;
+import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -134,4 +135,55 @@ public class NotificationService {
         dto.setAttendanceRecordId(notification.getAttendanceRecord().getId());
         return dto;
     }
+
+    @Transactional
+    public void deleteNotificationsForRecord(AttendanceRecord record) {
+        List<AdminNotification> notifications = adminNotificationRepository
+                .findByAttendanceRecord(record);
+        adminNotificationRepository.deleteAll(notifications);
+    }
+
+    @Transactional
+    public void deleteNotification(Long notificationId) {
+        AdminNotification notification = adminNotificationRepository.findById(notificationId)
+                .orElseThrow(() -> new RuntimeException("Notification not found"));
+
+        adminNotificationRepository.delete(notification);
+    }
+
+    @Transactional
+    public int deleteNotifications(List<Long> notificationIds) {
+        List<AdminNotification> notifications = adminNotificationRepository.findAllById(notificationIds);
+        int count = notifications.size();
+        adminNotificationRepository.deleteAll(notifications);
+        return count;
+    }
+
+    @Transactional
+    public int clearReadNotifications() {
+        List<AdminNotification> readNotifications = adminNotificationRepository
+                .findByIsReadTrue();
+        int count = readNotifications.size();
+        adminNotificationRepository.deleteAll(readNotifications);
+        return count;
+    }
+
+    @Transactional
+    public int clearAllNotifications() {
+        List<AdminNotification> allNotifications = adminNotificationRepository.findAll();
+        int count = allNotifications.size();
+        adminNotificationRepository.deleteAll(allNotifications);
+        return count;
+    }
+
+    @Transactional
+    public int cleanupOldNotifications(Integer daysOld) {
+        LocalDateTime cutoffDate = LocalDateTime.now().minusDays(daysOld);
+        List<AdminNotification> oldNotifications = adminNotificationRepository
+                .findByCreatedAtBeforeAndIsReadTrue(cutoffDate);
+        int count = oldNotifications.size();
+        adminNotificationRepository.deleteAll(oldNotifications);
+        return count;
+    }
+
 }

@@ -20,6 +20,13 @@ import java.util.stream.Collectors;
 @Transactional
 public class AttendanceService {
 
+    // Constants for business rules
+    private static final int BREAK_DEDUCTION_THRESHOLD_HOURS = 5;
+    private static final int BREAK_DEDUCTION_HOURS = 1;
+    private static final int ROUNDING_THRESHOLD_MINUTES = 40;
+    private static final int REGULAR_HOURS_CAP = 8;
+    private static final int MINIMUM_HOURS_BETWEEN_SESSIONS = 4;
+
     @Autowired
     private StudentRepository studentRepository;
 
@@ -34,6 +41,8 @@ public class AttendanceService {
 
     @Autowired
     private TaskService taskService;
+
+    // ==================== STUDENT REGISTRATION ====================
 
     public StudentRegistrationResponse registerStudent(StudentRegistrationRequest request) {
         if (studentRepository.countActiveStudentsByIdBadge(request.getIdBadge()) > 0) {
@@ -80,6 +89,9 @@ public class AttendanceService {
         );
     }
 
+    // ==================== MAIN ATTENDANCE PROCESSING ====================
+
+    @Transactional
     public AttendanceResponse processAttendance(AttendanceRequest request) {
         Student student = studentRepository.findByIdBadge(request.getIdBadge())
                 .orElseThrow(() -> new RuntimeException("Student not found with ID badge: " + request.getIdBadge()));
@@ -88,110 +100,108 @@ public class AttendanceService {
             throw new RuntimeException("Only active students can log attendance. Current status: " + student.getStatus());
         }
 
-        // CRITICAL: First check if there's ANY active session (regardless of date)
+        // Check if there's an active session (already timed in)
         Optional<AttendanceRecord> activeSession = attendanceRecordRepository
                 .findActiveSessionByStudent(student);
 
         if (activeSession.isPresent()) {
-            // Student has an active session - process time-out
-            AttendanceRecord record = activeSession.get();
+            // Student is timed in - process time-out
+            return processTimeOut(activeSession.get(), request.getTasksCompleted());
+        }
 
-            // Check if any tasks have been logged for this session
-            boolean hasLoggedTasks = taskService.hasTasksForRecord(record.getId());
+        // No active session - validate if student can time in
+        validateTimeInEligibility(student);
 
-            if (hasLoggedTasks) {
-                return processTimeOutWithExistingTasks(record, request.getTasksCompleted());
-            } else {
-                return processTraditionalTimeOut(record, request.getTasksCompleted());
+        // All checks passed - allow time-in
+        return processTimeIn(student);
+    }
+
+    /**
+     * HYBRID APPROACH: Schedule-Based with Override Option
+     *
+     * Rules:
+     * 1. If student has active schedule:
+     *    - Allow time-in if within schedule window (start - grace to end + grace)
+     * 2. If no schedule OR outside schedule window:
+     *    - Allow time-in if last time-out was at least 4 hours ago
+     * 3. Always reject if currently timed in
+     */
+    private void validateTimeInEligibility(Student student) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalTime currentTime = now.toLocalTime();
+
+        // Check if student has active schedule
+        if (student.hasActiveSchedule()) {
+            // Calculate schedule window with grace period
+            LocalTime scheduleStart = student.getScheduledStartTime();
+            LocalTime scheduleEnd = student.getScheduledEndTime();
+            int gracePeriod = student.getGracePeriodMinutes() != null ? student.getGracePeriodMinutes() : 5;
+
+            LocalTime windowStart = scheduleStart.minusMinutes(gracePeriod);
+            LocalTime windowEnd = scheduleEnd.plusMinutes(gracePeriod);
+
+            // Check if current time is within schedule window
+            if (isWithinTimeWindow(currentTime, windowStart, windowEnd)) {
+                // Within schedule - allow time in
+                return;
             }
         }
 
-        // No active session - check if already completed today
-        LocalDate currentWorkDate = getCurrentWorkDate();
-        List<AttendanceRecord> todayRecords = attendanceRecordRepository
-                .findByStudentAndWorkDate(student, currentWorkDate);
+        // No schedule OR outside schedule window - check minimum hours between sessions
+        List<AttendanceRecord> recentRecords = attendanceRecordRepository
+                .findByStudentOrderByAttendanceDateDesc(student);
 
-        // Check if there's a completed record for this work day
-        boolean hasCompletedToday = todayRecords.stream()
-                .anyMatch(record -> record.getStatus() != AttendanceStatus.TIMED_IN);
+        if (!recentRecords.isEmpty()) {
+            // Find most recent completed session
+            Optional<AttendanceRecord> lastCompleted = recentRecords.stream()
+                    .filter(record -> record.getTimeOut() != null)
+                    .findFirst();
 
-        if (hasCompletedToday) {
-            throw new RuntimeException("Attendance already completed for this work day. You cannot time in again.");
+            if (lastCompleted.isPresent()) {
+                LocalDateTime lastTimeOut = lastCompleted.get().getTimeOut();
+                Duration timeSinceLastTimeOut = Duration.between(lastTimeOut, now);
+
+                if (timeSinceLastTimeOut.toHours() < MINIMUM_HOURS_BETWEEN_SESSIONS) {
+                    long hoursRemaining = MINIMUM_HOURS_BETWEEN_SESSIONS - timeSinceLastTimeOut.toHours();
+                    throw new RuntimeException(
+                            String.format("You must wait at least %d hours between sessions. " +
+                                            "Please wait %d more hour(s) before timing in again.",
+                                    MINIMUM_HOURS_BETWEEN_SESSIONS, hoursRemaining)
+                    );
+                }
+            }
         }
 
-        // All checks passed - allow time-in
-        return processScheduleAwareTimeIn(student);
+        // Passed minimum hours check - allow time in
     }
 
-    private LocalDate calculateWorkDate(LocalDateTime dateTime) {
-        // Night shift handling: 12:00 AM - 5:59 AM belongs to previous day
-        if (dateTime.getHour() < 6) {
-            return dateTime.toLocalDate().minusDays(1);
+    /**
+     * Check if current time is within a time window (handles midnight crossing)
+     */
+    private boolean isWithinTimeWindow(LocalTime current, LocalTime start, LocalTime end) {
+        if (start.isBefore(end)) {
+            // Normal case: 08:00 to 17:00
+            return !current.isBefore(start) && !current.isAfter(end);
+        } else {
+            // Crosses midnight: 22:00 to 06:00
+            return !current.isBefore(start) || !current.isAfter(end);
         }
-        return dateTime.toLocalDate();
     }
 
-    private LocalDate getCurrentWorkDate() {
-        return calculateWorkDate(LocalDateTime.now());
-    }
+    // ==================== TIME IN PROCESSING ====================
 
-    private AttendanceResponse processTraditionalTimeOut(AttendanceRecord record, String tasksCompleted) {
-        if (tasksCompleted == null || tasksCompleted.trim().isEmpty()) {
-            throw new RuntimeException("Tasks completed is required for time out");
-        }
-
-        LocalDateTime now = LocalDateTime.now();
-
-        record.setTimeOut(now);
-        record.setTasksCompleted(tasksCompleted);
-        record.setStatus(AttendanceStatus.TIMED_OUT);
-
-        // Calculate hours and update student
-        HoursCalculation calculation = calculateScheduleAwareHours(record);
-        updateRecordHours(record, calculation);
-
-        Student student = record.getStudent();
-        // Fix: Update student's total accumulated hours
-        student.setTotalAccumulatedHours(student.getTotalAccumulatedHours() + calculation.getTotalHours());
-
-        // Save the updated record and student
-        attendanceRecordRepository.save(record);
-        studentRepository.save(student);
-
-        // Return proper AttendanceResponse
-        return new AttendanceResponse(
-                "TIME_OUT",
-                buildTimeOutMessage(student, record),
-                true,
-                student.getFullName(),
-                student.getIdBadge(),
-                record.getTimeIn(),
-                now,
-                roundToNearestHour(record.getTimeIn()),
-                roundToNearestHour(now),
-                calculation.getTotalHours(),
-                calculation.getRegularHours(),
-                calculation.getOvertimeHours(),
-                calculation.getUndertimeHours(),
-                student.getTotalAccumulatedHours(),
-                tasksCompleted,
-                calculation.isBreakDeducted()
-        );
-    }
-
-
-    private AttendanceResponse processScheduleAwareTimeIn(Student student) {
+    @Transactional
+    private AttendanceResponse processTimeIn(Student student) {
         LocalDateTime now = LocalDateTime.now();
         LocalTime arrivalTime = now.toLocalTime();
 
         AttendanceRecord record = new AttendanceRecord(student, now);
         record.setStatus(AttendanceStatus.TIMED_IN);
-        record.setWorkDate(calculateWorkDate(now)); // Set work date
+        record.setWorkDate(calculateWorkDate(now));
 
         attendanceRecordRepository.save(record);
 
-        // Build response with schedule information
-        AttendanceResponse response = new AttendanceResponse(
+        return new AttendanceResponse(
                 "TIME_IN",
                 buildTimeInMessage(student, arrivalTime),
                 true,
@@ -209,30 +219,54 @@ public class AttendanceService {
                 null,
                 false
         );
-
-        return response;
     }
 
-    // SCHEDULE-AWARE TIME OUT PROCESSING
-    private AttendanceResponse processScheduleAwareTimeOut(AttendanceRecord record, String tasksCompleted) {
-        LocalDateTime now = LocalDateTime.now();
+    private String buildTimeInMessage(Student student, LocalTime arrivalTime) {
+        StringBuilder message = new StringBuilder("Time in recorded successfully");
 
+        if (student.hasActiveSchedule()) {
+            String scheduleStatus = student.getScheduleStatusText(arrivalTime);
+            LocalTime expectedEnd = student.calculateExpectedEndTime(arrivalTime);
+
+            message.append(". Status: ").append(scheduleStatus);
+
+            if (expectedEnd != null) {
+                message.append(". Expected end time: ").append(expectedEnd);
+            }
+        }
+
+        return message.toString();
+    }
+
+    // ==================== TIME OUT PROCESSING ====================
+
+    @Transactional
+    private AttendanceResponse processTimeOut(AttendanceRecord record, String tasksCompleted) {
+        // Check if tasks were logged during the session
+        boolean hasLoggedTasks = taskService.hasTasksForRecord(record.getId());
+
+        if (hasLoggedTasks) {
+            return processTimeOutWithExistingTasks(record, tasksCompleted);
+        } else {
+            return processTraditionalTimeOut(record, tasksCompleted);
+        }
+    }
+
+    @Transactional
+    private AttendanceResponse processTraditionalTimeOut(AttendanceRecord record, String tasksCompleted) {
         if (tasksCompleted == null || tasksCompleted.trim().isEmpty()) {
             throw new RuntimeException("Tasks completed is required for time out");
         }
+
+        LocalDateTime now = LocalDateTime.now();
 
         record.setTimeOut(now);
         record.setTasksCompleted(tasksCompleted);
         record.setStatus(AttendanceStatus.TIMED_OUT);
 
-        // Calculate hours using schedule-aware logic
+        // Calculate hours and update record
         HoursCalculation calculation = calculateScheduleAwareHours(record);
-
-        record.setTotalHours(calculation.getTotalHours());
-        record.setRegularHours(calculation.getRegularHours());
-        record.setOvertimeHours(calculation.getOvertimeHours());
-        record.setUndertimeHours(calculation.getUndertimeHours());
-        record.setBreakDeducted(calculation.isBreakDeducted());
+        updateRecordHours(record, calculation);
 
         // Update student's total accumulated hours
         Student student = record.getStudent();
@@ -241,153 +275,10 @@ public class AttendanceService {
         attendanceRecordRepository.save(record);
         studentRepository.save(student);
 
-        return new AttendanceResponse(
-                "TIME_OUT",
-                buildTimeOutMessage(student, record),
-                true,
-                student.getFullName(),
-                student.getIdBadge(),
-                record.getTimeIn(),
-                now,
-                roundToNearestHour(record.getTimeIn()),
-                roundToNearestHour(now),
-                calculation.getTotalHours(),
-                calculation.getRegularHours(),
-                calculation.getOvertimeHours(),
-                calculation.getUndertimeHours(),
-                student.getTotalAccumulatedHours(),
-                tasksCompleted,
-                calculation.isBreakDeducted()
-        );
+        return buildTimeOutResponse(student, record, calculation, now);
     }
 
-    // SCHEDULE-AWARE HOURS CALCULATION
-    private HoursCalculation calculateScheduleAwareHours(AttendanceRecord record) {
-        Student student = record.getStudent();
-        LocalTime timeIn = record.getTimeIn().toLocalTime();
-        LocalTime timeOut = record.getTimeOut().toLocalTime();
-
-        // If no active schedule, use original calculation
-        if (!student.hasActiveSchedule()) {
-            return calculateOriginalHours(record.getTimeIn(), record.getTimeOut());
-        }
-
-        // Calculate work duration
-        Duration workDuration = Duration.between(record.getTimeIn(), record.getTimeOut());
-        double rawHours = workDuration.toMinutes() / 60.0;
-
-        HoursCalculation calculation = new HoursCalculation();
-        calculation.setBreakDeducted(false);
-
-        // Apply break deduction if worked 5+ hours
-        if (rawHours >= 5.0) {
-            rawHours -= 1.0; // Deduct 1 hour for lunch break
-            calculation.setBreakDeducted(true);
-        }
-
-        // Apply 40-minute rounding rule
-        double roundedHours = applyRoundingRule(rawHours);
-        calculation.setTotalHours(roundedHours);
-
-        // Determine if there's overtime based on schedule
-        LocalTime expectedEndTime = student.calculateExpectedEndTime(timeIn);
-        double overtimeHours = 0.0;
-
-        if (expectedEndTime != null && timeOut.isAfter(expectedEndTime)) {
-            Duration overtimeDuration = Duration.between(expectedEndTime, timeOut);
-            double overtimeMinutes = overtimeDuration.toMinutes();
-
-            // Apply rounding to overtime
-            if (overtimeMinutes >= 40) {
-                overtimeHours = Math.ceil(overtimeMinutes / 60.0);
-            }
-        }
-
-        // Calculate regular vs overtime hours
-        double regularHours = Math.max(0, roundedHours - overtimeHours);
-        calculation.setRegularHours(Math.min(regularHours, 8.0)); // Cap regular at 8 hours
-        calculation.setOvertimeHours(overtimeHours);
-        calculation.setUndertimeHours(Math.max(0, 8.0 - calculation.getRegularHours()));
-
-        return calculation;
-    }
-
-    private HoursCalculation calculateOriginalHours(LocalDateTime timeIn, LocalDateTime timeOut) {
-        Duration duration = Duration.between(timeIn, timeOut);
-        double totalMinutes = duration.toMinutes();
-        double rawHours = totalMinutes / 60.0;
-
-        HoursCalculation calculation = new HoursCalculation();
-        calculation.setBreakDeducted(false);
-
-        if (rawHours >= 5.0) {
-            rawHours -= 1.0;
-            calculation.setBreakDeducted(true);
-        }
-
-        double roundedHours = applyRoundingRule(rawHours);
-        calculation.setTotalHours(roundedHours);
-
-        if (roundedHours >= 8.0) {
-            calculation.setRegularHours(8.0);
-            calculation.setOvertimeHours(roundedHours - 8.0);
-            calculation.setUndertimeHours(0.0);
-        } else {
-            calculation.setRegularHours(roundedHours);
-            calculation.setOvertimeHours(0.0);
-            calculation.setUndertimeHours(8.0 - roundedHours);
-        }
-
-        return calculation;
-    }
-
-    // APPLY 40-MINUTE ROUNDING RULE
-    private double applyRoundingRule(double hours) {
-        int wholeHours = (int) hours;
-        double minutes = (hours - wholeHours) * 60;
-
-        if (minutes >= 50) {
-            return wholeHours + 1.0;
-        } else {
-            return wholeHours;
-        }
-    }
-
-    private String buildTimeInMessage(Student student, LocalTime arrivalTime) {
-        if (!student.hasActiveSchedule()) {
-            return "Time in recorded successfully";
-        }
-
-        String scheduleStatus = student.getScheduleStatusText(arrivalTime);
-        LocalTime expectedEnd = student.calculateExpectedEndTime(arrivalTime);
-
-        StringBuilder message = new StringBuilder("Time in recorded successfully. ");
-        message.append("Status: ").append(scheduleStatus);
-
-        if (expectedEnd != null) {
-            message.append(". Expected end time: ").append(expectedEnd);
-        }
-
-        return message.toString();
-    }
-
-    private String buildTimeOutMessage(Student student, AttendanceRecord record) {
-        StringBuilder message = new StringBuilder("Time out recorded successfully");
-
-        if (student.hasActiveSchedule()) {
-            LocalTime timeOut = record.getTimeOut().toLocalTime();
-            LocalTime expectedEnd = student.calculateExpectedEndTime(record.getTimeIn().toLocalTime());
-
-            if (expectedEnd != null && timeOut.isAfter(expectedEnd)) {
-                Duration overtime = Duration.between(expectedEnd, timeOut);
-                long overtimeMinutes = overtime.toMinutes();
-                message.append(". Overtime: ").append(overtimeMinutes).append(" minutes");
-            }
-        }
-
-        return message.toString();
-    }
-    // Handle time-out when tasks already exist
+    @Transactional
     private AttendanceResponse processTimeOutWithExistingTasks(AttendanceRecord record, String additionalTasks) {
         LocalDateTime now = LocalDateTime.now();
 
@@ -408,10 +299,11 @@ public class AttendanceService {
 
         record.setTasksCompleted(consolidatedTasks);
 
-        // Calculate hours and update student
+        // Calculate hours and update record
         HoursCalculation calculation = calculateScheduleAwareHours(record);
         updateRecordHours(record, calculation);
 
+        // Update student's total accumulated hours
         Student student = record.getStudent();
         student.setTotalAccumulatedHours(student.getTotalAccumulatedHours() + calculation.getTotalHours());
 
@@ -421,7 +313,140 @@ public class AttendanceService {
         return buildTimeOutResponse(student, record, calculation, now);
     }
 
-    // Helper method to update record hours
+    private String buildTimeOutMessage(Student student, AttendanceRecord record) {
+        StringBuilder message = new StringBuilder("Time out recorded successfully");
+
+        if (student.hasActiveSchedule()) {
+            LocalTime timeOut = record.getTimeOut().toLocalTime();
+            LocalTime expectedEnd = student.calculateExpectedEndTime(record.getTimeIn().toLocalTime());
+
+            if (expectedEnd != null && timeOut.isAfter(expectedEnd)) {
+                Duration overtime = Duration.between(expectedEnd, timeOut);
+                long overtimeMinutes = overtime.toMinutes();
+                message.append(". Overtime: ").append(overtimeMinutes).append(" minutes");
+            }
+        }
+
+        return message.toString();
+    }
+
+    // ==================== HOURS CALCULATION ====================
+
+    private HoursCalculation calculateScheduleAwareHours(AttendanceRecord record) {
+        Student student = record.getStudent();
+        LocalTime timeIn = record.getTimeIn().toLocalTime();
+        LocalTime timeOut = record.getTimeOut().toLocalTime();
+
+        // If no active schedule, use original calculation
+        if (!student.hasActiveSchedule()) {
+            return calculateOriginalHours(record.getTimeIn(), record.getTimeOut());
+        }
+
+        // Calculate work duration
+        Duration workDuration = Duration.between(record.getTimeIn(), record.getTimeOut());
+        double rawHours = workDuration.toMinutes() / 60.0;
+
+        HoursCalculation calculation = new HoursCalculation();
+        calculation.setBreakDeducted(false);
+
+        // Apply break deduction if worked 5+ hours
+        if (rawHours >= BREAK_DEDUCTION_THRESHOLD_HOURS) {
+            rawHours -= BREAK_DEDUCTION_HOURS;
+            calculation.setBreakDeducted(true);
+        }
+
+        // Apply 40-minute rounding rule
+        double roundedHours = applyRoundingRule(rawHours);
+        calculation.setTotalHours(roundedHours);
+
+        // Determine if there's overtime based on schedule
+        LocalTime expectedEndTime = student.calculateExpectedEndTime(timeIn);
+        double overtimeHours = 0.0;
+
+        if (expectedEndTime != null && timeOut.isAfter(expectedEndTime)) {
+            Duration overtimeDuration = Duration.between(expectedEndTime, timeOut);
+            double overtimeMinutes = overtimeDuration.toMinutes();
+
+            // Apply rounding to overtime
+            if (overtimeMinutes >= ROUNDING_THRESHOLD_MINUTES) {
+                overtimeHours = Math.ceil(overtimeMinutes / 60.0);
+            }
+        }
+
+        // Calculate regular vs overtime hours
+        double regularHours = Math.max(0, roundedHours - overtimeHours);
+        calculation.setRegularHours(Math.min(regularHours, REGULAR_HOURS_CAP));
+        calculation.setOvertimeHours(overtimeHours);
+        calculation.setUndertimeHours(Math.max(0, REGULAR_HOURS_CAP - calculation.getRegularHours()));
+
+        return calculation;
+    }
+
+    private HoursCalculation calculateOriginalHours(LocalDateTime timeIn, LocalDateTime timeOut) {
+        Duration duration = Duration.between(timeIn, timeOut);
+        double totalMinutes = duration.toMinutes();
+        double rawHours = totalMinutes / 60.0;
+
+        HoursCalculation calculation = new HoursCalculation();
+        calculation.setBreakDeducted(false);
+
+        if (rawHours >= BREAK_DEDUCTION_THRESHOLD_HOURS) {
+            rawHours -= BREAK_DEDUCTION_HOURS;
+            calculation.setBreakDeducted(true);
+        }
+
+        double roundedHours = applyRoundingRule(rawHours);
+        calculation.setTotalHours(roundedHours);
+
+        if (roundedHours >= REGULAR_HOURS_CAP) {
+            calculation.setRegularHours((double) REGULAR_HOURS_CAP);
+            calculation.setOvertimeHours(roundedHours - REGULAR_HOURS_CAP);
+            calculation.setUndertimeHours(0.0);
+        } else {
+            calculation.setRegularHours(roundedHours);
+            calculation.setOvertimeHours(0.0);
+            calculation.setUndertimeHours(REGULAR_HOURS_CAP - roundedHours);
+        }
+
+        return calculation;
+    }
+
+    /**
+     * Apply 40-minute rounding rule
+     * - 40+ minutes rounds up to next hour
+     * - Under 40 minutes rounds down
+     */
+    private double applyRoundingRule(double hours) {
+        int wholeHours = (int) hours;
+        double minutes = (hours - wholeHours) * 60;
+
+        if (minutes >= ROUNDING_THRESHOLD_MINUTES) {
+            return wholeHours + 1.0;
+        } else {
+            return wholeHours;
+        }
+    }
+
+    private LocalDateTime roundToNearestHour(LocalDateTime dateTime) {
+        int minutes = dateTime.getMinute();
+
+        if (minutes <= 39) {
+            return dateTime.withMinute(0).withSecond(0).withNano(0);
+        } else {
+            return dateTime.withMinute(0).withSecond(0).withNano(0).plusHours(1);
+        }
+    }
+
+    private LocalDate calculateWorkDate(LocalDateTime dateTime) {
+        // Night shift handling: 12:00 AM - 5:59 AM belongs to previous day
+        if (dateTime.getHour() < 6) {
+            return dateTime.toLocalDate().minusDays(1);
+        }
+        return dateTime.toLocalDate();
+    }
+
+    // ==================== HELPER METHODS ====================
+
     private void updateRecordHours(AttendanceRecord record, HoursCalculation calculation) {
         record.setTotalHours(calculation.getTotalHours());
         record.setRegularHours(calculation.getRegularHours());
@@ -430,7 +455,6 @@ public class AttendanceService {
         record.setBreakDeducted(calculation.isBreakDeducted());
     }
 
-    // Helper method to build time-out response
     private AttendanceResponse buildTimeOutResponse(Student student, AttendanceRecord record,
                                                     HoursCalculation calculation, LocalDateTime timeOut) {
         return new AttendanceResponse(
@@ -453,18 +477,81 @@ public class AttendanceService {
         );
     }
 
+    // ==================== ADMIN CORRECTION ====================
+
+    @Transactional
+    public AttendanceResponse processAdminCorrection(AdminCorrectionRequest request) {
+        AttendanceRecord record = attendanceRecordRepository.findById(request.getAttendanceRecordId())
+                .orElseThrow(() -> new RuntimeException("Attendance record not found"));
+
+        Double originalTotalHours = record.getTotalHours() != null ? record.getTotalHours() : 0.0;
+
+        record.setTotalHours(request.getCorrectedHours());
+
+        if (request.getCorrectedHours() >= REGULAR_HOURS_CAP) {
+            record.setRegularHours((double) REGULAR_HOURS_CAP);
+            record.setOvertimeHours(request.getCorrectedHours() - REGULAR_HOURS_CAP);
+            record.setUndertimeHours(0.0);
+        } else {
+            record.setRegularHours(request.getCorrectedHours());
+            record.setOvertimeHours(0.0);
+            record.setUndertimeHours(REGULAR_HOURS_CAP - request.getCorrectedHours());
+        }
+
+        record.setStatus(AttendanceStatus.ADMIN_CORRECTED);
+
+        if (record.getTimeOut() == null && record.getTimeIn() != null) {
+            LocalDateTime calculatedTimeOut = record.getTimeIn().plusHours(request.getCorrectedHours().longValue());
+            record.setTimeOut(calculatedTimeOut);
+        }
+
+        if (request.getCorrectionReason() != null && !request.getCorrectionReason().trim().isEmpty()) {
+            String currentTasks = record.getTasksCompleted() != null ? record.getTasksCompleted() : "";
+            record.setTasksCompleted(currentTasks + "\n[ADMIN CORRECTION: " + request.getCorrectionReason() + "]");
+        }
+
+        Student student = record.getStudent();
+        Double hoursDifference = request.getCorrectedHours() - originalTotalHours;
+        student.setTotalAccumulatedHours(student.getTotalAccumulatedHours() + hoursDifference);
+
+        attendanceRecordRepository.save(record);
+        studentRepository.save(student);
+
+        // AUTO-DELETE related notifications after correction
+        notificationService.deleteNotificationsForRecord(record);
+
+        return new AttendanceResponse(
+                "ADMIN_CORRECTION",
+                "Attendance record corrected and completed successfully",
+                true,
+                student.getFullName(),
+                student.getIdBadge(),
+                record.getTimeIn(),
+                record.getTimeOut(),
+                roundToNearestHour(record.getTimeIn()),
+                record.getTimeOut() != null ? roundToNearestHour(record.getTimeOut()) : null,
+                record.getTotalHours(),
+                record.getRegularHours(),
+                record.getOvertimeHours(),
+                record.getUndertimeHours(),
+                student.getTotalAccumulatedHours(),
+                record.getTasksCompleted(),
+                record.getBreakDeducted()
+        );
+    }
+
+    // ==================== SESSION INFO ====================
+
     public AttendanceSessionInfo getCurrentSessionInfo(String idBadge) {
         Student student = studentRepository.findByIdBadge(idBadge)
                 .orElseThrow(() -> new RuntimeException("Student not found with ID badge: " + idBadge));
 
-        LocalDate today = LocalDate.now();
         AttendanceRecord activeRecord = attendanceRecordRepository
-                .findByStudentAndAttendanceDateAndStatus(student, today, AttendanceStatus.TIMED_IN)
+                .findActiveSessionByStudent(student)
                 .orElseThrow(() -> new RuntimeException("No active attendance session found"));
 
-        List<TaskEntry> todayTasks = taskEntryRepository.findByAttendanceRecordOrderByCompletedAtAsc(activeRecord);
+        List<TaskEntry> sessionTasks = taskEntryRepository.findByAttendanceRecordOrderByCompletedAtAsc(activeRecord);
 
-        // Calculate current session hours
         Duration sessionDuration = Duration.between(activeRecord.getTimeIn(), LocalDateTime.now());
         double currentHours = sessionDuration.toMinutes() / 60.0;
 
@@ -473,7 +560,7 @@ public class AttendanceService {
                 student.getFullName(),
                 student.getIdBadge(),
                 activeRecord.getTimeIn(),
-                todayTasks.size(),
+                sessionTasks.size(),
                 Math.round(currentHours * 100.0) / 100.0
         );
     }
@@ -487,31 +574,25 @@ public class AttendanceService {
         }
     }
 
+    // ==================== SCHEDULE MANAGEMENT ====================
 
-    // SCHEDULE MANAGEMENT METHODS
     @Transactional
     public ScheduleResponse updateStudentSchedule(Long studentId, UpdateScheduleRequest request) {
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new RuntimeException("Student not found"));
 
-        // Validate schedule times
         if (request.getStartTime().isAfter(request.getEndTime())) {
             throw new RuntimeException("Start time must be before end time");
         }
 
         // Check if student is currently timed in
-        LocalDate today = LocalDate.now();
-        List<AttendanceRecord> todayRecords = attendanceRecordRepository
-                .findByStudentAndAttendanceDate(student, today);
+        Optional<AttendanceRecord> activeSession = attendanceRecordRepository
+                .findActiveSessionByStudent(student);
 
-        boolean isCurrentlyTimedIn = todayRecords.stream()
-                .anyMatch(record -> record.getStatus() == AttendanceStatus.TIMED_IN);
-
-        if (isCurrentlyTimedIn) {
+        if (activeSession.isPresent()) {
             throw new RuntimeException("Cannot update schedule while student is currently timed in");
         }
 
-        // Update schedule
         student.setScheduledStartTime(request.getStartTime());
         student.setScheduledEndTime(request.getEndTime());
         student.setGracePeriodMinutes(request.getGracePeriodMinutes());
@@ -547,22 +628,21 @@ public class AttendanceService {
         );
     }
 
+    // ==================== STUDENT MANAGEMENT ====================
+
     @Transactional
     public StudentDto updateStudentBadge(Long studentId, UpdateBadgeRequest request) {
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new RuntimeException("Student not found"));
 
-        // Check if new badge is already used by another ACTIVE student
         if (studentRepository.countActiveStudentsByIdBadge(request.getNewIdBadge()) > 0) {
             throw new RuntimeException("ID badge " + request.getNewIdBadge() + " is already in use by an active student");
         }
 
-        // Validate new badge format
         if (!request.getNewIdBadge().matches("\\d{4}")) {
             throw new RuntimeException("ID badge must be exactly 4 digits");
         }
 
-        // Cannot change badge of completed student
         if (student.getStatus() == StudentStatus.COMPLETED) {
             throw new RuntimeException("Cannot change badge of completed student");
         }
@@ -585,20 +665,14 @@ public class AttendanceService {
             throw new RuntimeException("Invalid status: " + request.getStatus());
         }
 
-        // Validation: Can't change from COMPLETED back to ACTIVE
         if (student.getStatus() == StudentStatus.COMPLETED && newStatus == StudentStatus.ACTIVE) {
             throw new RuntimeException("Cannot reactivate a completed student");
         }
 
-        // Check if student is currently timed in
-        LocalDate today = LocalDate.now();
-        List<AttendanceRecord> todayRecords = attendanceRecordRepository
-                .findByStudentAndAttendanceDate(student, today);
+        Optional<AttendanceRecord> activeSession = attendanceRecordRepository
+                .findActiveSessionByStudent(student);
 
-        boolean isCurrentlyTimedIn = todayRecords.stream()
-                .anyMatch(record -> record.getStatus() == AttendanceStatus.TIMED_IN);
-
-        if (isCurrentlyTimedIn && newStatus != StudentStatus.ACTIVE) {
+        if (activeSession.isPresent() && newStatus != StudentStatus.ACTIVE) {
             throw new RuntimeException("Cannot change status while student is currently timed in");
         }
 
@@ -621,22 +695,16 @@ public class AttendanceService {
             throw new RuntimeException("Only active students can be marked as completed");
         }
 
-        // Check if student is currently timed in
-        LocalDate today = LocalDate.now();
-        List<AttendanceRecord> todayRecords = attendanceRecordRepository
-                .findByStudentAndAttendanceDate(student, today);
+        Optional<AttendanceRecord> activeSession = attendanceRecordRepository
+                .findActiveSessionByStudent(student);
 
-        boolean isCurrentlyTimedIn = todayRecords.stream()
-                .anyMatch(record -> record.getStatus() == AttendanceStatus.TIMED_IN);
-
-        if (isCurrentlyTimedIn) {
+        if (activeSession.isPresent()) {
             throw new RuntimeException("Cannot complete student while they are currently timed in");
         }
 
-        // Update student status
         student.setStatus(StudentStatus.COMPLETED);
         student.setCompletionDate(LocalDateTime.now());
-        student.setIdBadge(null); // Release the badge for reuse
+        // Keep the badge for historical records instead of nullifying
 
         Student updatedStudent = studentRepository.save(student);
 
@@ -654,12 +722,7 @@ public class AttendanceService {
         return convertToStudentDto(updatedStudent);
     }
 
-    public List<StudentDto> getStudentsByStatus(StudentStatus status) {
-        List<Student> students = studentRepository.findByStatusOrderByFullNameAsc(status);
-        return students.stream()
-                .map(this::convertToStudentDto)
-                .collect(Collectors.toList());
-    }
+    // ==================== STUDENT LISTING ====================
 
     public List<StudentDto> getActiveStudents() {
         return getStudentsByStatus(StudentStatus.ACTIVE);
@@ -671,6 +734,20 @@ public class AttendanceService {
 
     public List<StudentDto> getInactiveStudents() {
         return getStudentsByStatus(StudentStatus.INACTIVE);
+    }
+
+    public List<StudentDto> getAllStudents() {
+        List<Student> students = studentRepository.findAll();
+        return students.stream()
+                .map(this::convertToStudentDto)
+                .collect(Collectors.toList());
+    }
+
+    private List<StudentDto> getStudentsByStatus(StudentStatus status) {
+        List<Student> students = studentRepository.findByStatusOrderByFullNameAsc(status);
+        return students.stream()
+                .map(this::convertToStudentDto)
+                .collect(Collectors.toList());
     }
 
     public List<StudentDto> getStudentsNearCompletion() {
@@ -687,183 +764,42 @@ public class AttendanceService {
                 .collect(Collectors.toList());
     }
 
-    private AttendanceResponse processTimeIn(Student student) {
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime roundedTimeIn = roundToNearestHour(now);
+    // ==================== ATTENDANCE RECORDS ====================
 
-        AttendanceRecord record = new AttendanceRecord(student, now);
-        record.setStatus(AttendanceStatus.TIMED_IN);
-
-        attendanceRecordRepository.save(record);
-
-        return new AttendanceResponse(
-                "TIME_IN",
-                "Time in recorded successfully",
-                true,
-                student.getFullName(),
-                student.getIdBadge(),
-                now,
-                null,
-                roundedTimeIn,
-                null,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                student.getTotalAccumulatedHours(),
-                null,
-                false
-        );
+    public List<AttendanceRecordDto> getAttendanceRecordsByDate(LocalDate date) {
+        List<AttendanceRecord> records = attendanceRecordRepository
+                .findByWorkDateOrderByTimeInAsc(date);
+        return records.stream()
+                .map(this::convertToDto)
+                .collect(Collectors.toList());
     }
 
-    private AttendanceResponse processTimeOut(AttendanceRecord record, String tasksCompleted) {
-        LocalDateTime now = LocalDateTime.now();
-
-        if (tasksCompleted == null || tasksCompleted.trim().isEmpty()) {
-            throw new RuntimeException("Tasks completed is required for time out");
-        }
-
-        record.setTimeOut(now);
-        record.setTasksCompleted(tasksCompleted);
-        record.setStatus(AttendanceStatus.TIMED_OUT);
-
-        // Calculate hours using rounded versions of actual times
-        LocalDateTime roundedTimeIn = roundToNearestHour(record.getTimeIn());
-        LocalDateTime roundedTimeOut = roundToNearestHour(now);
-        HoursCalculation calculation = calculateHours(roundedTimeIn, roundedTimeOut);
-
-        record.setTotalHours(calculation.getTotalHours());
-        record.setRegularHours(calculation.getRegularHours());
-        record.setOvertimeHours(calculation.getOvertimeHours());
-        record.setUndertimeHours(calculation.getUndertimeHours());
-        record.setBreakDeducted(calculation.isBreakDeducted());
-
-        // Update student's total accumulated hours
-        Student student = record.getStudent();
-        student.setTotalAccumulatedHours(student.getTotalAccumulatedHours() + calculation.getTotalHours());
-
-        attendanceRecordRepository.save(record);
-        studentRepository.save(student);
-
-        return new AttendanceResponse(
-                "TIME_OUT",
-                "Time out recorded successfully",
-                true,
-                student.getFullName(),
-                student.getIdBadge(),
-                record.getTimeIn(),
-                now,
-                roundedTimeIn,
-                roundedTimeOut,
-                calculation.getTotalHours(),
-                calculation.getRegularHours(),
-                calculation.getOvertimeHours(),
-                calculation.getUndertimeHours(),
-                student.getTotalAccumulatedHours(),
-                tasksCompleted,
-                calculation.isBreakDeducted()
-        );
+    public List<AttendanceRecordDto> getAttendanceRecordsByCalendarDate(LocalDate date) {
+        List<AttendanceRecord> records = attendanceRecordRepository
+                .findByAttendanceDateOrderByTimeInAsc(date);
+        return records.stream()
+                .map(this::convertToDto)
+                .collect(Collectors.toList());
     }
 
-    public AttendanceResponse processAdminCorrection(AdminCorrectionRequest request) {
-        AttendanceRecord record = attendanceRecordRepository.findById(request.getAttendanceRecordId())
-                .orElseThrow(() -> new RuntimeException("Attendance record not found"));
-
-        Double originalTotalHours = record.getTotalHours() != null ? record.getTotalHours() : 0.0;
-
-        record.setTotalHours(request.getCorrectedHours());
-
-        if (request.getCorrectedHours() >= 8.0) {
-            record.setRegularHours(8.0);
-            record.setOvertimeHours(request.getCorrectedHours() - 8.0);
-            record.setUndertimeHours(0.0);
-        } else {
-            record.setRegularHours(request.getCorrectedHours());
-            record.setOvertimeHours(0.0);
-            record.setUndertimeHours(8.0 - request.getCorrectedHours());
-        }
-
-        record.setStatus(AttendanceStatus.ADMIN_CORRECTED);
-
-        if (record.getTimeOut() == null && record.getTimeIn() != null) {
-            LocalDateTime calculatedTimeOut = record.getTimeIn().plusHours(request.getCorrectedHours().longValue());
-            record.setTimeOut(calculatedTimeOut);
-        }
-
-        if (request.getCorrectionReason() != null && !request.getCorrectionReason().trim().isEmpty()) {
-            String currentTasks = record.getTasksCompleted() != null ? record.getTasksCompleted() : "";
-            record.setTasksCompleted(currentTasks + "\n[ADMIN CORRECTION: " + request.getCorrectionReason() + "]");
-        }
-
-        Student student = record.getStudent();
-        Double hoursDifference = request.getCorrectedHours() - originalTotalHours;
-        student.setTotalAccumulatedHours(student.getTotalAccumulatedHours() + hoursDifference);
-
-        attendanceRecordRepository.save(record);
-        studentRepository.save(student);
-
-        return new AttendanceResponse(
-                "ADMIN_CORRECTION",
-                "Attendance record corrected and completed successfully",
-                true,
-                student.getFullName(),
-                student.getIdBadge(),
-                record.getTimeIn(),
-                record.getTimeOut(),
-                roundToNearestHour(record.getTimeIn()),
-                record.getTimeOut() != null ? roundToNearestHour(record.getTimeOut()) : null,
-                record.getTotalHours(),
-                record.getRegularHours(),
-                record.getOvertimeHours(),
-                record.getUndertimeHours(),
-                student.getTotalAccumulatedHours(),
-                record.getTasksCompleted(),
-                record.getBreakDeducted()
-        );
+    public List<AttendanceRecordDto> getAttendanceRecordsByDateRange(LocalDate startDate, LocalDate endDate) {
+        List<AttendanceRecord> records = attendanceRecordRepository
+                .findByWorkDateRange(startDate, endDate);
+        return records.stream()
+                .map(this::convertToDto)
+                .collect(Collectors.toList());
     }
 
-    private HoursCalculation calculateHours(LocalDateTime timeIn, LocalDateTime timeOut) {
-        Duration duration = Duration.between(timeIn, timeOut);
-        double totalMinutes = duration.toMinutes();
-        double rawHours = totalMinutes / 60.0;
+    public List<AttendanceRecordDto> getIncompleteRecords() {
+        LocalDateTime twelveHoursAgo = LocalDateTime.now().minusHours(10);
+        List<AttendanceRecord> records = attendanceRecordRepository.findRecordsNeedingAdminReview(twelveHoursAgo);
 
-        HoursCalculation calculation = new HoursCalculation();
-        calculation.setBreakDeducted(false);
-
-        // Check if break should be deducted
-        if (rawHours >= 5.0) {
-            rawHours -= 1.0; // Deduct 1 hour for lunch break
-            calculation.setBreakDeducted(true);
-        }
-
-        calculation.setTotalHours(Math.round(rawHours * 100.0) / 100.0);
-
-        // Calculate regular, overtime, and undertime
-        if (calculation.getTotalHours() >= 8.0) {
-            calculation.setRegularHours(8.0);
-            calculation.setOvertimeHours(calculation.getTotalHours() - 8.0);
-            calculation.setUndertimeHours(0.0);
-        } else {
-            calculation.setRegularHours(calculation.getTotalHours());
-            calculation.setOvertimeHours(0.0);
-            calculation.setUndertimeHours(8.0 - calculation.getTotalHours());
-        }
-
-        return calculation;
+        return records.stream()
+                .map(this::convertToDto)
+                .collect(Collectors.toList());
     }
 
-    private LocalDateTime roundToNearestHour(LocalDateTime dateTime) {
-        int minutes = dateTime.getMinute();
-
-        LocalDateTime rounded;
-        if (minutes <= 39) {
-            rounded = dateTime.withMinute(0).withSecond(0).withNano(0);
-        } else {
-            rounded = dateTime.withMinute(0).withSecond(0).withNano(0).plusHours(1);
-        }
-
-        return rounded;
-    }
+    // ==================== STUDENT DASHBOARD ====================
 
     public StudentDashboardResponse getStudentDashboard(String idBadge) {
         Student student = studentRepository.findByIdBadge(idBadge)
@@ -882,7 +818,7 @@ public class AttendanceService {
         List<AttendanceRecord> allRecords = attendanceRecordRepository
                 .findByStudentOrderByAttendanceDateDesc(student);
 
-        // Convert to DTOs with enhanced task information
+        // Convert to DTOs
         List<AttendanceRecordDto> recordDtos = allRecords.stream()
                 .map(this::convertToDto)
                 .collect(Collectors.toList());
@@ -906,7 +842,7 @@ public class AttendanceService {
                     .map(this::convertToTaskDto)
                     .collect(Collectors.toList());
 
-            // Check if student can log more tasks (only if currently timed in)
+            // Check if student can log more tasks
             if (todayRecord.getStatus() == AttendanceStatus.TIMED_IN) {
                 canLogTasks = true;
                 activeSessionId = todayRecord.getId();
@@ -927,55 +863,8 @@ public class AttendanceService {
         );
     }
 
-    // Helper method to convert TaskEntry to TaskEntryDto
-    private TaskEntryDto convertToTaskDto(TaskEntry task) {
-        return new TaskEntryDto(
-                task.getId(),
-                task.getTaskDescription(),
-                task.getCompletedAt(),
-                task.getAddedAt(),
-                task.getAddedDuringTimeout()
-        );
-    }
+    // ==================== TASK ANALYTICS ====================
 
-    private AttendanceResponse processIntelligentTimeOut(AttendanceRecord record, String tasksCompleted) {
-        // This should be processTimeOutWithExistingTasks
-        return processTimeOutWithExistingTasks(record, tasksCompleted);
-    }
-
-    // Time-out with forgotten tasks handling
-    public AttendanceResponse processTimeOutWithForgottenTasks(AttendanceRequest request, List<AddTaskRequest> forgottenTasks) {
-        Student student = studentRepository.findByIdBadge(request.getIdBadge())
-                .orElseThrow(() -> new RuntimeException("Student not found with ID badge: " + request.getIdBadge()));
-
-        LocalDate today = LocalDate.now();
-        AttendanceRecord activeRecord = attendanceRecordRepository
-                .findByStudentAndAttendanceDateAndStatus(student, today, AttendanceStatus.TIMED_IN)
-                .orElseThrow(() -> new RuntimeException("No active attendance session found"));
-
-        // Add any forgotten tasks first
-        if (forgottenTasks != null && !forgottenTasks.isEmpty()) {
-            for (AddTaskRequest forgottenTask : forgottenTasks) {
-                forgottenTask.setIdBadge(request.getIdBadge());
-                forgottenTask.setAddedDuringTimeout(true);
-
-                // Validate and add the forgotten task
-                TaskEntry taskEntry = new TaskEntry(
-                        activeRecord,
-                        forgottenTask.getTaskDescription().trim(),
-                        forgottenTask.getCompletedAt(),
-                        true // Mark as added during timeout
-                );
-
-                taskEntryRepository.save(taskEntry);
-            }
-        }
-
-        // Now process the normal time-out
-        return processIntelligentTimeOut(activeRecord, request.getTasksCompleted());
-    }
-
-    // NEW METHOD: Get task logging statistics for admin
     public TaskLoggingStats getTaskLoggingStats(LocalDate date) {
         List<AttendanceRecord> dayRecords = attendanceRecordRepository.findByAttendanceDateOrderByTimeInAsc(date);
 
@@ -1012,61 +901,28 @@ public class AttendanceService {
         );
     }
 
-    // NEW METHOD: Validate task entry timing
-    private void validateTaskTiming(LocalDateTime completedAt, LocalDateTime sessionStart) {
-        LocalDateTime now = LocalDateTime.now();
+    @Transactional
+    public StudentDto updateOjtStartDate(Long studentId, UpdateOjtStartDateRequest request) {
+        Student student = studentRepository.findById(studentId)
+                .orElseThrow(() -> new RuntimeException("Student not found"));
 
-        // Task cannot be completed before session start
-        if (completedAt.isBefore(sessionStart)) {
-            throw new RuntimeException("Task completion time cannot be before your time-in today");
+        // Validate that OJT start date is not in the future
+        if (request.getOjtStartDate().isAfter(LocalDate.now())) {
+            throw new RuntimeException("OJT start date cannot be in the future");
         }
 
-        // Task cannot be completed more than 5 minutes in the future
-        if (completedAt.isAfter(now.plusMinutes(5))) {
-            throw new RuntimeException("Task completion time cannot be in the future");
+        // Validate that OJT start date is not before registration date
+        if (request.getOjtStartDate().isBefore(student.getRegistrationDate().toLocalDate())) {
+            throw new RuntimeException("OJT start date cannot be before registration date");
         }
 
-        // Warn if task is logged much later than completion
-        Duration delay = Duration.between(completedAt, now);
-        if (delay.toHours() > 2) {
-            // Log warning but don't throw exception
-            System.out.println("Warning: Task logged " + delay.toHours() + " hours after completion");
-        }
+        student.setOjtStartDate(request.getOjtStartDate());
+        Student updatedStudent = studentRepository.save(student);
+
+        return convertToStudentDto(updatedStudent);
     }
 
-    public List<AttendanceRecordDto> getAttendanceRecordsByDate(LocalDate date) {
-        List<AttendanceRecord> records = attendanceRecordRepository
-                .findByWorkDateOrderByTimeInAsc(date);
-        return records.stream()
-                .map(this::convertToDto)
-                .collect(Collectors.toList());
-    }
-
-    public List<AttendanceRecordDto> getAttendanceRecordsByDateRange(LocalDate startDate, LocalDate endDate) {
-        List<AttendanceRecord> records = attendanceRecordRepository
-                .findByWorkDateRange(startDate, endDate);
-        return records.stream()
-                .map(this::convertToDto)
-                .collect(Collectors.toList());
-    }
-
-    public List<StudentDto> getAllStudents() {
-        List<Student> students = studentRepository.findAll();
-        return students.stream()
-                .map(this::convertToStudentDto)
-                .collect(Collectors.toList());
-    }
-
-    public List<AttendanceRecordDto> getIncompleteRecords() {
-        LocalDateTime twelveHoursAgo = LocalDateTime.now().minusHours(10);
-        List<AttendanceRecord> records = attendanceRecordRepository.findRecordsNeedingAdminReview(twelveHoursAgo);
-
-        return records.stream()
-                .map(this::convertToDto)
-                .collect(Collectors.toList());
-    }
-
-
+    // ==================== CONVERSION METHODS ====================
 
     private AttendanceRecordDto convertToDto(AttendanceRecord record) {
         AttendanceRecordDto dto = new AttendanceRecordDto();
@@ -1086,7 +942,6 @@ public class AttendanceService {
         return dto;
     }
 
-    // FIXED: Complete implementation with all calculated fields
     private StudentDto convertToStudentDto(Student student) {
         StudentDto dto = new StudentDto();
         dto.setId(student.getId());
@@ -1100,25 +955,7 @@ public class AttendanceService {
         dto.setRequiredHours(student.getRequiredHours());
         dto.setHoursRemaining(student.getHoursRemaining());
         dto.setCompletionPercentage(student.getCompletionPercentage());
-
-        return dto;
-    }
-
-    private EnhancedStudentDto convertToEnhancedStudentDto(Student student) {
-        EnhancedStudentDto dto = new EnhancedStudentDto();
-
-        // Copy basic fields
-        dto.setId(student.getId());
-        dto.setIdBadge(student.getIdBadge());
-        dto.setFullName(student.getFullName());
-        dto.setSchool(student.getSchool());
-        dto.setRegistrationDate(student.getRegistrationDate());
-        dto.setTotalAccumulatedHours(student.getTotalAccumulatedHours());
-        dto.setStatus(student.getStatus().name());
-        dto.setCompletionDate(student.getCompletionDate());
-        dto.setRequiredHours(student.getRequiredHours());
-        dto.setHoursRemaining(student.getHoursRemaining());
-        dto.setCompletionPercentage(student.getCompletionPercentage());
+        dto.setOjtStartDate(student.getOjtStartDate());
 
         // Add schedule fields
         dto.setScheduledStartTime(student.getScheduledStartTime());
@@ -1130,16 +967,82 @@ public class AttendanceService {
         return dto;
     }
 
-    public boolean hasCompletedAttendanceToday(String idBadge) {
-        Student student = studentRepository.findByIdBadge(idBadge).orElse(null);
-        if (student == null) return false;
-
-        LocalDate today = LocalDate.now();
-        List<AttendanceRecord> todayRecords = attendanceRecordRepository
-                .findByStudentAndAttendanceDate(student, today);
-
-        return todayRecords.stream().anyMatch(record ->
-                record.getStatus() != AttendanceStatus.TIMED_IN
+    private TaskEntryDto convertToTaskDto(TaskEntry task) {
+        return new TaskEntryDto(
+                task.getId(),
+                task.getTaskDescription(),
+                task.getCompletedAt(),
+                task.getAddedAt(),
+                task.getAddedDuringTimeout()
         );
+    }
+
+    @Transactional
+    public StudentDto deleteStudent(Long studentId) {
+        Student student = studentRepository.findById(studentId)
+                .orElseThrow(() -> new RuntimeException("Student not found"));
+
+        // Check if student is currently timed in
+        Optional<AttendanceRecord> activeSession = attendanceRecordRepository
+                .findActiveSessionByStudent(student);
+
+        if (activeSession.isPresent()) {
+            throw new RuntimeException("Cannot delete student while they are currently timed in. " +
+                    "Please time them out first.");
+        }
+
+        // Store student data before deletion for response
+        StudentDto deletedStudentDto = convertToStudentDto(student);
+
+        // Delete in correct order due to foreign key constraints
+        // 1. Delete all notifications related to this student
+        List<AttendanceRecord> studentRecords = attendanceRecordRepository
+                .findByStudentOrderByAttendanceDateDesc(student);
+
+        for (AttendanceRecord record : studentRecords) {
+            // Delete notifications for this record
+            notificationService.deleteNotificationsForRecord(record);
+
+            // Delete task entries for this record
+            taskService.deleteTasksForRecord(record.getId());
+        }
+
+        // 2. Delete all attendance records
+        attendanceRecordRepository.deleteAll(studentRecords);
+
+        // 3. Finally delete the student
+        studentRepository.delete(student);
+
+        return deletedStudentDto;
+    }
+
+    @Transactional
+    public StudentDto deactivateStudent(Long studentId, DeactivateStudentRequest request) {
+        Student student = studentRepository.findById(studentId)
+                .orElseThrow(() -> new RuntimeException("Student not found"));
+
+        // Check if student is currently timed in
+        Optional<AttendanceRecord> activeSession = attendanceRecordRepository
+                .findActiveSessionByStudent(student);
+
+        if (activeSession.isPresent()) {
+            throw new RuntimeException("Cannot deactivate student while they are currently timed in. " +
+                    "Please time them out first.");
+        }
+
+        // Set status to INACTIVE
+        student.setStatus(StudentStatus.INACTIVE);
+
+        // Optionally release the ID badge
+        if (request.getRemoveIdBadge() != null && request.getRemoveIdBadge()) {
+            String oldBadge = student.getIdBadge();
+            student.setIdBadge(null); // Release badge for reuse
+        }
+
+        // Save deactivation reason in a note (you might want to add a notes field to Student entity)
+        // For now, we'll just save the student
+        Student updatedStudent = studentRepository.save(student);
+
+        return convertToStudentDto(updatedStudent);
     }
 }

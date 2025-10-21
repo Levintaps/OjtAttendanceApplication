@@ -161,4 +161,15 @@ public class TaskService {
             return false;
         }
     }
+
+    @Transactional
+    public void deleteTasksForRecord(Long recordId) {
+        AttendanceRecord record = attendanceRecordRepository.findById(recordId)
+                .orElseThrow(() -> new RuntimeException("Attendance record not found"));
+
+        List<TaskEntry> tasks = taskEntryRepository
+                .findByAttendanceRecordOrderByCompletedAtAsc(record);
+
+        taskEntryRepository.deleteAll(tasks);
+    }
 }

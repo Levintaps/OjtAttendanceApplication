@@ -91,6 +91,79 @@ public class AdminController {
         }
     }
 
+    @DeleteMapping("/notifications/{id}")
+    public ResponseEntity<?> deleteNotification(@PathVariable Long id) {
+        try {
+            notificationService.deleteNotification(id);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Notification deleted successfully"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/notifications/bulk")
+    public ResponseEntity<?> deleteNotifications(@RequestBody List<Long> notificationIds) {
+        try {
+            int deletedCount = notificationService.deleteNotifications(notificationIds);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Notifications deleted successfully",
+                    "deletedCount", deletedCount
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/notifications/clear-read")
+    public ResponseEntity<?> clearReadNotifications() {
+        try {
+            int deletedCount = notificationService.clearReadNotifications();
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Read notifications cleared",
+                    "deletedCount", deletedCount
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/notifications/clear-all")
+    public ResponseEntity<?> clearAllNotifications(@RequestParam(required = false) Boolean confirm) {
+        try {
+            if (!Boolean.TRUE.equals(confirm)) {
+                throw new RuntimeException("Confirmation required to clear all notifications");
+            }
+
+            int deletedCount = notificationService.clearAllNotifications();
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "All notifications cleared",
+                    "deletedCount", deletedCount
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/notifications/cleanup")
+    public ResponseEntity<?> cleanupOldNotifications(@RequestParam(defaultValue = "30") Integer daysOld) {
+        try {
+            int deletedCount = notificationService.cleanupOldNotifications(daysOld);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", String.format("Cleaned up notifications older than %d days", daysOld),
+                    "deletedCount", deletedCount
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
+    }
+
     @PostMapping("/attendance/correct")
     public ResponseEntity<?> correctAttendance(@Valid @RequestBody AdminCorrectionRequest request) {
         try {
@@ -544,6 +617,76 @@ public class AdminController {
                 "totalAttendanceRecords", totalRecords,
                 "periodDays", trends.size()
         );
+    }
+
+    @DeleteMapping("/students/{id}")
+    public ResponseEntity<?> deleteStudent(@PathVariable Long id) {
+        try {
+            StudentDto deletedStudent = attendanceService.deleteStudent(id);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Student " + deletedStudent.getFullName() + " has been permanently deleted",
+                    "deletedStudent", deletedStudent
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
+    }
+
+    @PutMapping("/students/{id}/deactivate")
+    public ResponseEntity<?> deactivateStudent(@PathVariable Long id,
+                                               @Valid @RequestBody DeactivateStudentRequest request) {
+        try {
+            StudentDto deactivatedStudent = attendanceService.deactivateStudent(id, request);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Student has been deactivated",
+                    "student", deactivatedStudent
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
+    }
+
+    @PutMapping("/students/{id}/ojt-start-date")
+    public ResponseEntity<?> updateOjtStartDate(@PathVariable Long id,
+                                                @Valid @RequestBody UpdateOjtStartDateRequest request) {
+        try {
+            StudentDto updatedStudent = attendanceService.updateOjtStartDate(id, request);
+            return ResponseEntity.ok(updatedStudent);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
+    }
+
+    @GetMapping("/attendance/records/calendar")
+    public ResponseEntity<?> getAttendanceRecordsByCalendarDate(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        try {
+            List<AttendanceRecordDto> records = attendanceService.getAttendanceRecordsByCalendarDate(date);
+            return ResponseEntity.ok(records);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
+    }
+
+    @GetMapping("/attendance/records")
+    public ResponseEntity<?> getAttendanceRecords(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        try {
+            if (date != null) {
+                // This uses workDate for night shift handling
+                return ResponseEntity.ok(attendanceService.getAttendanceRecordsByDate(date));
+            } else if (startDate != null && endDate != null) {
+                return ResponseEntity.ok(attendanceService.getAttendanceRecordsByDateRange(startDate, endDate));
+            } else {
+                return ResponseEntity.badRequest().body(createErrorResponse("Either 'date' or both 'startDate' and 'endDate' parameters are required"));
+            }
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
     }
 }
 

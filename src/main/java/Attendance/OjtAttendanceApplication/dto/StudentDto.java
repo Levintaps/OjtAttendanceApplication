@@ -1,5 +1,6 @@
 package Attendance.OjtAttendanceApplication.dto;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 
@@ -15,6 +16,7 @@ public class StudentDto {
     private Double requiredHours;
     private Double hoursRemaining;
     private Double completionPercentage;
+    private LocalDate ojtStartDate;
 
     // NEW SCHEDULE FIELDS
     private LocalTime scheduledStartTime;
@@ -59,6 +61,14 @@ public class StudentDto {
 
     public Double getCompletionPercentage() { return completionPercentage; }
     public void setCompletionPercentage(Double completionPercentage) { this.completionPercentage = completionPercentage; }
+
+    public LocalDate getOjtStartDate() {
+        return ojtStartDate;
+    }
+
+    public void setOjtStartDate(LocalDate ojtStartDate) {
+        this.ojtStartDate = ojtStartDate;
+    }
 
     // NEW SCHEDULE GETTERS AND SETTERS
     public LocalTime getScheduledStartTime() { return scheduledStartTime; }

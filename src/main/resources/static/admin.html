@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TERA IT - Admin Dashboard</title>
     <link rel="stylesheet" href="admin.css">
+    <link rel="stylesheet" href="notification.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 </head>
 <body>
@@ -30,17 +31,16 @@
     </div>
 
     <div class="container">
-        <!-- Alert Container -->
-        <div id="alertContainer"></div>
-
         <!-- Navigation Tabs -->
         <div class="nav-tabs">
             <button class="nav-tab active" onclick="switchTab('dashboard')">Dashboard</button>
             <button class="nav-tab" onclick="switchTab('students')">Students</button>
-            <button class="nav-tab" onclick="switchTab('attendance')">Attendance Records</button>
-            <button class="nav-tab" onclick="switchTab('corrections')">Time Corrections</button>
-            <button class="nav-tab" onclick="switchTab('schedules')">Schedule Management</button>
+            <button class="nav-tab" onclick="switchTab('attendance')">Attendance</button>
+            <button class="nav-tab" onclick="switchTab('corrections')">Corrections</button>
+            <button class="nav-tab" onclick="switchTab('schedules')">Schedules</button>
+            <button class="nav-tab" onclick="switchTab('liveTasks')">Live Tasks</button>
             <button class="nav-tab" onclick="switchTab('reports')">Reports</button>
+            <button class="nav-tab" onclick="switchTab('settings')">Settings</button>
         </div>
 
         <!-- Dashboard Tab -->
@@ -71,7 +71,7 @@
                         <p>Hours logged per day over the past 7 days</p>
                     </div>
                     <div class="chart-container">
-                        <canvas id="attendanceChart" width="400" height="200"></canvas>
+                        <canvas id="attendanceChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -79,10 +79,10 @@
             <div class="card">
                 <div class="card-header">
                     <h3>Recent Activity</h3>
-                    <button class="btn btn-primary" onclick="loadDashboard()">Refresh Dashboard</button>
+                    <button class="btn btn-primary" onclick="loadDashboard()">Refresh</button>
                 </div>
                 <div class="table-container">
-                    <table class="data-table" id="dashboardTable">
+                    <table class="data-table">
                         <thead>
                         <tr>
                             <th>Student Name</th>
@@ -95,9 +95,7 @@
                         </tr>
                         </thead>
                         <tbody id="dashboardBody">
-                        <tr>
-                            <td colspan="7" class="loading-state">Loading dashboard data...</td>
-                        </tr>
+                        <tr><td colspan="7" class="loading-state">Loading...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -106,206 +104,245 @@
 
         <!-- Students Tab -->
         <div id="students" class="tab-content">
-            <div class="card">
-                <div class="card-header">
-                    <h3>Student Registration</h3>
-                </div>
-                <div id="badgeChecker" class="form-group-inline" style="margin: 0 2rem 1.5rem 2rem;">
-                    <label for="checkBadgeInput">Check Badge Availability:</label>
-                    <div class="badge-check-input">
-                        <input type="text" id="checkBadgeInput" placeholder="Enter 4-digit badge" maxlength="4">
+            <div class="students-layout">
+                <!-- Sidebar -->
+                <aside class="students-sidebar">
+                    <div class="sidebar-section">
+                        <h3>📊 Overview</h3>
+                        <div class="sidebar-stats">
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Total</span>
+                                <span class="sidebar-stat-value" id="sidebarTotalStudents">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Active</span>
+                                <span class="sidebar-stat-value" id="sidebarActiveStudents">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Completed</span>
+                                <span class="sidebar-stat-value" id="sidebarCompletedStudents">0</span>
+                            </div>
+                        </div>
                     </div>
-                    <div id="badgeCheckResult"></div>
-                </div>
 
-                <form id="studentRegistrationForm" onsubmit="registerStudentWithHours(event)">
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="studentIdBadge">ID Badge Number (4 digits):</label>
-                            <input type="text" id="studentIdBadge" name="idBadge" placeholder="e.g., 1045" maxlength="4" required>
-                            <div id="badgeValidation" class="validation-message"></div>
-                        </div>
-                        <div class="form-group">
-                            <label for="studentFullName">Full Name:</label>
-                            <input type="text" id="studentFullName" name="fullName" placeholder="Enter student's full name" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="studentSchool">School/University:</label>
-                            <input type="text" id="studentSchool" name="school" placeholder="Enter school name" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="studentRequiredHours">Required Hours:</label>
-                            <input type="number" id="studentRequiredHours" name="requiredHours" placeholder="e.g., 480" min="1" max="2000" required>
-                            <small>Typical OJT programs: 240-600 hours</small>
+                    <div class="sidebar-section">
+                        <h3>🔍 Filters</h3>
+                        <div class="filter-chips">
+                            <button class="filter-chip active" onclick="loadStudentsByStatusNew('all')" data-filter="all">
+                                <span class="filter-chip-label">All Students</span>
+                                <span class="filter-chip-count" id="chipAllCount">0</span>
+                            </button>
+                            <button class="filter-chip" onclick="loadStudentsByStatusNew('active')" data-filter="active">
+                                <span class="filter-chip-label">Active</span>
+                                <span class="filter-chip-count" id="chipActiveCount">0</span>
+                            </button>
+                            <button class="filter-chip" onclick="loadStudentsByStatusNew('completed')" data-filter="completed">
+                                <span class="filter-chip-label">Completed</span>
+                                <span class="filter-chip-count" id="chipCompletedCount">0</span>
+                            </button>
+                            <button class="filter-chip" onclick="loadStudentsByStatusNew('near-completion')" data-filter="near-completion">
+                                <span class="filter-chip-label">Near Completion</span>
+                                <span class="filter-chip-count" id="chipNearCount">0</span>
+                            </button>
                         </div>
                     </div>
-                    <div class="action-buttons">
-                        <button type="submit" class="btn btn-success">Register Student</button>
-                        <button type="button" class="btn btn-secondary" onclick="clearRegistrationForm()">Clear Form</button>
-                        <button type="button" class="btn btn-info" onclick="loadAllStudents()">Refresh List</button>
+                </aside>
+
+                <!-- Content -->
+                <main class="students-content">
+                    <div class="page-header">
+                        <div class="page-header-top">
+                            <div class="page-title">
+                                <h2>Student Management</h2>
+                                <p>Manage student profiles, schedules, and attendance records</p>
+                            </div>
+                            <div class="page-actions">
+                                <button class="btn btn-secondary" onclick="downloadCSVReport()">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                                    </svg>
+                                    Export
+                                </button>
+                                <button class="btn btn-primary" onclick="showRegisterStudentModal()">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    </svg>
+                                    Register Student
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="search-bar-container">
+                            <div class="search-bar-wrapper">
+                                <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <path d="m21 21-4.35-4.35"></path>
+                                </svg>
+                                <input type="text" class="search-bar" id="studentSearchNew" placeholder="Search by name, ID badge, or school..." onkeyup="filterStudentsNew()">
+                            </div>
+                        </div>
                     </div>
-                </form>
+
+                    <div class="clean-table-container">
+                        <table class="clean-table students-table">
+                            <thead>
+                            <tr>
+                                <th onclick="sortStudentsTable('idBadge')">ID Badge <span class="sort-icon">↕️</span></th>
+                                <th onclick="sortStudentsTable('fullName')">Full Name <span class="sort-icon">↕️</span></th>
+                                <th>School</th>
+                                <th>Status</th>
+                                <th>Progress</th>
+                                <th onclick="sortStudentsTable('totalHours')">Total Hours <span class="sort-icon">↕️</span></th>
+                                <th>Actions</th>
+                            </tr>
+                            </thead>
+                            <tbody id="studentsBodyNew">
+                            <tr><td colspan="7" class="loading-state">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </main>
             </div>
+        </div>
 
-            <div class="card">
-                <div class="card-header">
-                    <h3>Student Management</h3>
-                    <div class="search-controls">
-                        <input type="text" placeholder="Search students..." id="studentSearch" onkeyup="filterStudents()">
-                        <select id="statusFilter" onchange="filterStudents()">
-                            <option value="all">All Students</option>
-                            <option value="active">Active Only</option>
-                            <option value="completed">Completed Only</option>
-                            <option value="inactive">Inactive Only</option>
+        <!-- Attendance Tab -->
+        <div id="attendance" class="tab-content">
+            <div class="attendance-controls">
+                <div class="controls-row">
+                    <div class="control-group">
+                        <label class="control-label">📅 Date Range</label>
+                        <div class="date-range-selector">
+                            <div class="date-range-display" onclick="toggleDateRangeDropdown()">
+                                <span id="selectedDateRange">Select date range...</span>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </div>
+                            <div class="date-range-dropdown" id="dateRangeDropdown">
+                                <button class="date-preset" onclick="filterTodayNew()">Today</button>
+                                <button class="date-preset" onclick="filterYesterdayNew()">Yesterday</button>
+                                <button class="date-preset" onclick="filterThisWeekNew()">This Week</button>
+                                <button class="date-preset" onclick="filterThisMonthNew()">This Month</button>
+                                <button class="date-preset" onclick="filterLast7DaysNew()">Last 7 Days</button>
+                                <button class="date-preset" onclick="filterLast30DaysNew()">Last 30 Days</button>
+                                <div class="custom-date-inputs">
+                                    <input type="date" id="customStartDate" placeholder="Start">
+                                    <input type="date" id="customEndDate" placeholder="End">
+                                    <button class="btn btn-sm btn-primary" onclick="applyCustomDateRange()">Apply</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label class="control-label">📊 Status</label>
+                        <select class="search-bar" id="attendanceStatusFilterNew" onchange="applyAttendanceFiltersNew()">
+                            <option value="all">All Status</option>
+                            <option value="TIMED_IN">Currently Timed In</option>
+                            <option value="TIMED_OUT">Timed Out</option>
+                            <option value="AUTO_TIMED_OUT">Auto Timed Out</option>
+                            <option value="ADMIN_CORRECTED">Admin Corrected</option>
                         </select>
                     </div>
-                </div>
 
-                <div class="student-filter-section">
-                    <div class="filter-buttons">
-                        <button class="btn btn-info filter-btn active" onclick="loadStudentsByStatus('all')" data-filter="all">
-                            All Students
-                            <span class="filter-count" id="allCount">0</span>
-                        </button>
-                        <button class="btn btn-success filter-btn" onclick="loadStudentsByStatus('active')" data-filter="active">
-                            Active
-                            <span class="filter-count" id="activeCount">0</span>
-                        </button>
-                        <button class="btn btn-warning filter-btn" onclick="loadStudentsByStatus('completed')" data-filter="completed">
-                            Completed
-                            <span class="filter-count" id="completedCount">0</span>
-                        </button>
-                        <button class="btn btn-primary filter-btn" onclick="loadStudentsByStatus('near-completion')" data-filter="near-completion">
-                            Near Completion
-                            <span class="filter-count" id="nearCompletionCount">0</span>
-                        </button>
-                        <button class="btn btn-secondary filter-btn" onclick="loadStudentsByStatus('ready-completion')" data-filter="ready-completion">
-                            Ready to Complete
-                            <span class="filter-count" id="readyCompletionCount">0</span>
-                        </button>
+                    <div class="control-group">
+                        <label class="control-label">🔍 Search</label>
+                        <div class="search-bar-wrapper">
+                            <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <path d="m21 21-4.35-4.35"></path>
+                            </svg>
+                            <input type="text" class="search-bar" id="attendanceSearchNew" placeholder="Search records..." onkeyup="applyAttendanceFiltersNew()" style="padding-left: 3rem;">
+                        </div>
                     </div>
-                </div>
 
-                <div class="student-stats-summary card">
-                    <div class="stats-row">
-                        <div class="stat-item">
-                            <div class="stat-label">Total Students</div>
-                            <div class="stat-value text-primary" id="totalStudentsStat">0</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-label">Active Students</div>
-                            <div class="stat-value text-success" id="activeStudentsStat">0</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-label">Completed Students</div>
-                            <div class="stat-value text-info" id="completedStudentsStat">0</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-label">Average Progress</div>
-                            <div class="stat-value text-warning" id="averageProgressStat">0%</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-label">Total Hours</div>
-                            <div class="stat-value text-primary" id="totalHoursStat">0h</div>
+                    <div class="control-group" style="flex: 0;">
+                        <label class="control-label">&nbsp;</label>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="btn btn-success" onclick="downloadFilteredRecordsNew()" id="downloadBtnNew" style="display: none; min-width: 20px;">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                                </svg>
+                                Download
+                            </button>
+                            <button class="btn btn-secondary" onclick="clearAllAttendanceFiltersNew()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                                Clear
+                            </button>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <div class="table-container">
-                    <table class="data-table students-table" id="studentsTable">
-                        <thead>
-                        <tr>
-                            <th class="sortable" onclick="sortStudentsTable('idBadge')">
-                                ID Badge
-                                <span class="sort-icon">↕️</span>
-                            </th>
-                            <th class="sortable" onclick="sortStudentsTable('fullName')">
-                                Full Name
-                                <span class="sort-icon">↕️</span>
-                            </th>
-                            <th>School</th>
-                            <th>Status</th>
-                            <th class="progress-header">Progress</th>
-                            <th class="sortable" onclick="sortStudentsTable('totalHours')">
-                                Total Hours
-                                <span class="sort-icon">↕️</span>
-                            </th>
-                            <th>Required Hours</th>
-                            <th class="sortable" onclick="sortStudentsTable('registrationDate')">
-                                Registration Date
-                                <span class="sort-icon">↕️</span>
-                            </th>
-                            <th class="actions-column">Actions</th>
-                        </tr>
-                        </thead>
-                        <tbody id="studentsBody">
-                        <tr>
-                            <td colspan="9" class="loading-state">Loading students...</td>
-                        </tr>
-                        </tbody>
-                    </table>
+            <div class="attendance-summary" id="attendanceSummaryNew" style="display: none;">
+                <div class="summary-card">
+                    <div class="summary-card-label">Total Records</div>
+                    <div class="summary-card-value" id="summaryTotalRecordsNew">0</div>
+                    <div class="summary-card-subtitle" id="summaryDateRangeNew"></div>
                 </div>
+                <div class="summary-card">
+                    <div class="summary-card-label">Total Hours</div>
+                    <div class="summary-card-value" id="summaryTotalHoursNew">0h</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-card-label">Unique Students</div>
+                    <div class="summary-card-value" id="summaryActiveStudentsNew">0</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-card-label">Average Hours</div>
+                    <div class="summary-card-value" id="summaryAverageHoursNew">0h</div>
+                </div>
+            </div>
+
+            <div class="clean-table-container">
+                <div class="table-header-section">
+                    <h3>📋 Attendance Records</h3>
+                </div>
+                <table class="clean-table">
+                    <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Student Name</th>
+                        <th>ID Badge</th>
+                        <th>School</th>
+                        <th>Time In</th>
+                        <th>Time Out</th>
+                        <th>Total Hours</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody id="attendanceBodyNew">
+                    <tr>
+                        <td colspan="9" class="empty-state-modern">
+                            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
+                            <h3>📅 Select a date range</h3>
+                            <p>Choose a date range above to view attendance records</p>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <!-- Attendance Records Tab -->
-        <div id="attendance" class="tab-content">
-            <div class="card">
-                <div class="card-header">
-                    <h3>Attendance Records</h3>
-                </div>
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="filterDate">Single Date:</label>
-                        <input type="date" id="filterDate">
-                    </div>
-                    <div class="form-group">
-                        <label for="filterStartDate">Start Date:</label>
-                        <input type="date" id="filterStartDate">
-                    </div>
-                    <div class="form-group">
-                        <label for="filterEndDate">End Date:</label>
-                        <input type="date" id="filterEndDate">
-                    </div>
-                </div>
-                <div class="action-buttons">
-                    <button class="btn btn-primary" onclick="filterByDate()">Filter by Date</button>
-                    <button class="btn btn-info" onclick="filterByDateRange()">Filter by Range</button>
-                    <button class="btn btn-secondary" onclick="clearFilters()">Clear Filters</button>
-                </div>
-                <div class="table-container">
-                    <table class="data-table" id="attendanceTable">
-                        <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Student Name</th>
-                            <th>ID Badge</th>
-                            <th>Time In</th>
-                            <th>Time Out</th>
-                            <th>Total Hours</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                        </thead>
-                        <tbody id="attendanceBody">
-                        <tr>
-                            <td colspan="8" class="empty-state">Use filters above to view attendance records</td>
-                        </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- Time Corrections Tab -->
+        <!-- Corrections Tab -->
         <div id="corrections" class="tab-content">
             <div class="card">
                 <div class="card-header">
                     <h3>Time Corrections</h3>
-                    <button class="btn btn-primary" onclick="loadIncompleteRecords()">Refresh Incomplete Records</button>
+                    <button class="btn btn-primary" onclick="loadIncompleteRecords()">Refresh</button>
                 </div>
                 <div class="alert alert-info">
-                    <strong>Time Correction System:</strong> Use this section to correct attendance records that need admin attention, such as auto time-outs or incomplete records.
+                    <strong>Time Correction System:</strong> Use this section to correct attendance records that need admin attention.
                 </div>
                 <div id="correctionsList">
                     <div class="loading-state">Loading records that need correction...</div>
@@ -313,32 +350,67 @@
             </div>
         </div>
 
-        <!-- Schedule Management Tab -->
+        <!-- Schedules Tab -->
         <div id="schedules" class="tab-content">
-            <!-- Schedule Overview Card -->
             <div class="card">
                 <div class="card-header">
                     <h3>Schedule Overview</h3>
-                    <button class="btn btn-primary" onclick="loadScheduleOverview()">Refresh Overview</button>
+                    <button class="btn btn-primary" onclick="loadScheduleOverview()">Refresh</button>
                 </div>
                 <div id="scheduleOverviewContent">
                     <div class="loading-state">Loading schedule overview...</div>
                 </div>
             </div>
 
-            <!-- Bulk Schedule Management -->
             <div class="card">
                 <div class="card-header">
                     <h3>Bulk Schedule Management</h3>
+                    <button class="btn btn-info" onclick="loadStudentsForScheduling()">Load Students</button>
                 </div>
+
+                <div id="studentSelectionArea" class="d-none" style="margin-bottom: 2rem;">
+                    <div class="card-header" style="background: var(--bg-secondary); padding: 1rem; border-radius: var(--border-radius-lg); margin-bottom: 1rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <h4 style="margin: 0;">Select Students for Schedule</h4>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <button class="btn btn-sm btn-secondary" onclick="selectAllStudents()">Select All</button>
+                                <button class="btn btn-sm btn-secondary" onclick="deselectAllStudents()">Deselect All</button>
+                                <span class="badge" style="background: var(--primary-color); color: white; padding: 0.5rem 1rem; border-radius: 20px;">
+                                    <span id="selectedCount">0</span> Selected
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-container" style="max-height: 400px;">
+                        <table class="data-table" id="schedulingStudentsTable">
+                            <thead>
+                            <tr>
+                                <th style="width: 50px;">
+                                    <input type="checkbox" id="selectAllCheckbox" onchange="toggleAllStudents(this)">
+                                </th>
+                                <th>ID Badge</th>
+                                <th>Full Name</th>
+                                <th>School</th>
+                                <th>Status</th>
+                                <th>Current Schedule</th>
+                            </tr>
+                            </thead>
+                            <tbody id="schedulingStudentsBody">
+                            <tr><td colspan="6" class="text-center">Click "Load Students" to begin</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <form id="bulkScheduleForm" onsubmit="submitBulkSchedule(event)">
                     <div class="form-grid">
                         <div class="form-group">
-                            <label for="bulkStartTime">Default Start Time:</label>
+                            <label for="bulkStartTime">Start Time:</label>
                             <input type="time" id="bulkStartTime" value="10:00" required>
                         </div>
                         <div class="form-group">
-                            <label for="bulkEndTime">Default End Time:</label>
+                            <label for="bulkEndTime">End Time:</label>
                             <input type="time" id="bulkEndTime" value="19:00" required>
                         </div>
                         <div class="form-group">
@@ -346,29 +418,34 @@
                             <input type="number" id="bulkGracePeriod" min="0" max="30" value="5" required>
                         </div>
                         <div class="form-group">
-                            <label for="bulkScheduleActive">Apply to:</label>
-                            <select id="bulkScheduleTarget" required>
-                                <option value="all-active">All Active Students</option>
-                                <option value="no-schedule">Students Without Schedule</option>
-                                <option value="selected">Selected Students</option>
+                            <label for="bulkScheduleActive">Schedule Status:</label>
+                            <select id="bulkScheduleActive" required>
+                                <option value="true">Active</option>
+                                <option value="false">Inactive</option>
                             </select>
                         </div>
                     </div>
+
+                    <div class="alert alert-info" id="scheduleSelectionWarning" style="display: none;">
+                        <strong>⚠️ No students selected!</strong> Please select at least one student from the table above.
+                    </div>
+
                     <div class="action-buttons">
-                        <button type="submit" class="btn btn-warning">Apply Bulk Schedule</button>
+                        <button type="submit" class="btn btn-warning" id="applyScheduleBtn" disabled>
+                            Apply Schedule to Selected Students
+                        </button>
                         <button type="button" class="btn btn-secondary" onclick="clearBulkScheduleForm()">Clear</button>
                     </div>
                 </form>
             </div>
 
-            <!-- Today's Late Arrivals -->
             <div class="card">
                 <div class="card-header">
                     <h3>Today's Late Arrivals</h3>
                     <button class="btn btn-info" onclick="loadLateArrivals()">Refresh</button>
                 </div>
                 <div class="table-container">
-                    <table class="data-table" id="lateArrivalsTable">
+                    <table class="data-table">
                         <thead>
                         <tr>
                             <th>Student Name</th>
@@ -380,34 +457,84 @@
                         </tr>
                         </thead>
                         <tbody id="lateArrivalsBody">
-                        <tr><td colspan="6" class="loading-state">Loading late arrivals...</td></tr>
+                        <tr><td colspan="6" class="loading-state">Loading...</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
+        </div>
 
-            <!-- Schedule Violations Report -->
+        <!-- Live Tasks Tab -->
+        <div id="liveTasks" class="tab-content">
             <div class="card">
                 <div class="card-header">
-                    <h3>Schedule Compliance Report</h3>
-                    <button class="btn btn-info" onclick="loadScheduleViolations()">Refresh</button>
+                    <h3>📊 Real-Time Task Monitoring</h3>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn btn-success" id="autoRefreshToggle" onclick="toggleAutoRefresh()">
+                            🔄 Auto-Refresh: ON
+                        </button>
+                        <button class="btn btn-primary" onclick="loadLiveTaskUpdates()">
+                            🔃 Refresh Now
+                        </button>
+                    </div>
                 </div>
-                <div class="table-container">
-                    <table class="data-table" id="violationsTable">
-                        <thead>
-                        <tr>
-                            <th>Student Name</th>
-                            <th>ID Badge</th>
-                            <th>Date</th>
-                            <th>Violation Type</th>
-                            <th>Details</th>
-                            <th>Actions</th>
-                        </tr>
-                        </thead>
-                        <tbody id="violationsBody">
-                        <tr><td colspan="6" class="loading-state">Loading violations...</td></tr>
-                        </tbody>
-                    </table>
+
+                <div class="live-task-stats">
+                    <div class="live-stat-card stat-total">
+                        <div class="live-stat-label">👥 Students</div>
+                        <div class="live-stat-value" id="statTotalActive">0</div>
+                    </div>
+                    <div class="live-stat-card stat-very-active">
+                        <div class="live-stat-label">🟢 Very Active</div>
+                        <div class="live-stat-value" id="statVeryActive">0</div>
+                    </div>
+                    <div class="live-stat-card stat-active">
+                        <div class="live-stat-label">🟡 Active</div>
+                        <div class="live-stat-value" id="statActive">0</div>
+                    </div>
+                    <div class="live-stat-card stat-idle">
+                        <div class="live-stat-label">🔴 Idle</div>
+                        <div class="live-stat-value" id="statIdle">0</div>
+                    </div>
+                    <div class="live-stat-card stat-tasks">
+                        <div class="live-stat-label">📝 Total Tasks</div>
+                        <div class="live-stat-value" id="statTotalTasks">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="live-task-controls">
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <div class="control-group">
+                        <label for="taskSortSelect">📊 Sort By:</label>
+                        <select id="taskSortSelect" onchange="displayLiveTaskCards()">
+                            <option value="recent">Most Recent Activity</option>
+                            <option value="tasks">Most Tasks</option>
+                            <option value="name">Name (A-Z)</option>
+                            <option value="time">Longest Working Time</option>
+                        </select>
+                    </div>
+
+                    <div class="control-group">
+                        <label for="productivityFilter">🎯 Filter:</label>
+                        <select id="productivityFilter" onchange="filterLiveTasks()">
+                            <option value="all">All Students</option>
+                            <option value="very-active">Very Active Only</option>
+                            <option value="active">Active Only</option>
+                            <option value="idle">Idle Only</option>
+                            <option value="new">Just Started</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="last-refresh-info">
+                    🕐 Last updated: <strong id="lastRefreshTime">Never</strong>
+                </div>
+            </div>
+
+            <div class="task-cards-grid" id="liveTaskCardsContainer">
+                <div class="loading-state" style="grid-column: 1 / -1;">
+                    <h3>Loading live task updates...</h3>
                 </div>
             </div>
         </div>
@@ -465,6 +592,117 @@
                 </div>
             </div>
         </div>
+
+        <!-- Add Settings Tab Content -->
+        <div id="settings" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h3>🔐 Security Settings</h3>
+                </div>
+
+                <div class="student-detail">
+                    <h4>Admin Password Management</h4>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <div class="detail-label">Username</div>
+                            <div class="detail-value">admin</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Last Password Change</div>
+                            <div class="detail-value" id="passwordLastChanged">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert alert-info">
+                    <strong>🛡️ Security Recommendations:</strong>
+                    <ul style="margin: 0.5rem 0 0 1.5rem; line-height: 1.8;">
+                        <li>Use a strong password with at least 8 characters</li>
+                        <li>Include uppercase, lowercase, numbers, and special characters</li>
+                        <li>Change your password regularly (every 90 days recommended)</li>
+                        <li>Never share your admin credentials</li>
+                    </ul>
+                </div>
+
+                <div class="action-buttons">
+                    <button class="btn btn-warning" onclick="showChangePasswordModal()">
+                        🔑 Change Password
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3>ℹ️ System Information</h3>
+                </div>
+                <div class="student-detail">
+                    <h4>Application Details</h4>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <div class="detail-label">System Name</div>
+                            <div class="detail-value">TERA IT Attendance System</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Version</div>
+                            <div class="detail-value">2.0.0</div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">API Status</div>
+                            <div class="detail-value">
+                                <span class="status-badge status-active">Online</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Change Password Modal -->
+        <div id="changePasswordModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>🔑 Change Admin Password</h3>
+                    <button class="modal-close" onclick="closeModal('changePasswordModal')">×</button>
+                </div>
+
+                <form id="changePasswordForm" onsubmit="submitChangePassword(event)">
+                    <div class="form-group">
+                        <label for="currentPassword">Current Password:</label>
+                        <input type="password" id="currentPassword" placeholder="Enter current password"
+                               required autocomplete="current-password">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="newPassword">New Password:</label>
+                        <input type="password" id="newPassword" placeholder="Enter new password (min 8 characters)"
+                               minlength="8" required autocomplete="new-password">
+                        <small>Must be at least 8 characters long</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="confirmPassword">Confirm New Password:</label>
+                        <input type="password" id="confirmPassword" placeholder="Re-enter new password"
+                               minlength="8" required autocomplete="new-password">
+                    </div>
+
+                    <div class="alert alert-warning">
+                        <strong>⚠️ Important:</strong> After changing your password, you'll need to use the new password for future logins.
+                    </div>
+
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" onclick="generateSecurePassword()">
+                            🎲 Generate Secure Password
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('changePasswordModal')">
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn btn-warning">
+                            💾 Change Password
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -477,8 +715,32 @@
     <div class="notification-content" id="notificationContent">
         <div class="loading-state">Loading notifications...</div>
     </div>
-    <div class="notification-footer">
-        <button class="btn btn-secondary" onclick="markAllNotificationsRead()">Mark All as Read</button>
+    <div class="notification-footer" style="display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem; border-top: 2px solid var(--border-color);">
+        <button class="btn btn-secondary" onclick="markAllNotificationsRead()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            Mark All as Read
+        </button>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+            <button class="btn btn-sm btn-info" onclick="clearReadNotifications()">
+                Clear Read
+            </button>
+            <button class="btn btn-sm btn-info" onclick="cleanupOldNotifications()">
+                Cleanup Old
+            </button>
+        </div>
+
+        <div class="danger-zone" style="margin-top: 0.5rem;">
+            <button class="btn btn-error" onclick="clearAllNotifications()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+                Clear All Notifications
+            </button>
+        </div>
     </div>
 </div>
 
@@ -506,28 +768,53 @@
 <div id="timeCorrectionModal" class="modal">
     <div class="modal-content">
         <div class="modal-header">
-            <h3>Time Correction</h3>
+            <h3>⏰ Time Correction</h3>
             <button class="modal-close" onclick="closeModal('timeCorrectionModal')">×</button>
         </div>
+
         <div id="correctionDetails"></div>
+
         <form id="timeCorrectionForm" onsubmit="submitTimeCorrection(event)">
             <div class="form-group">
-                <label for="correctedHours">Corrected Hours:</label>
-                <input type="number" id="correctedHours" min="0" max="16" step="1" placeholder="e.g., 8" required>
+                <label for="correctedHours">Corrected Hours (0-16):</label>
+                <input type="number"
+                       id="correctedHours"
+                       min="0"
+                       max="16"
+                       step="0.5"
+                       placeholder="Enter hours worked (e.g., 8.5)"
+                       required>
+                <small>Enter the actual number of hours the student worked</small>
             </div>
+
             <div class="form-group">
                 <label for="correctionReason">Correction Reason:</label>
-                <textarea id="correctionReason" placeholder="Explain the reason for this correction..." required></textarea>
+                <textarea id="correctionReason"
+                          placeholder="Explain why this correction is needed (e.g., 'Student forgot to time out', 'System error')"
+                          rows="3"
+                          required></textarea>
+                <small>This will be logged for audit purposes</small>
             </div>
+
+            <div class="alert alert-info">
+                <strong>ℹ️ Note:</strong> This correction will be recorded and marked as admin-corrected in the system.
+            </div>
+
             <div class="modal-actions">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('timeCorrectionModal')">Cancel</button>
-                <button type="submit" class="btn btn-warning">Apply Correction</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('timeCorrectionModal')">
+                    Cancel
+                </button>
+                <button type="submit" class="btn btn-warning">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    Apply Correction
+                </button>
             </div>
         </form>
     </div>
 </div>
 
-<!--Badge Management-->
 <div id="badgeManagementModal" class="modal">
     <div class="modal-content">
         <div class="modal-header">
@@ -536,13 +823,13 @@
         </div>
         <div id="badgeStudentInfo"></div>
         <form id="badgeManagementForm" onsubmit="submitBadgeChange(event)">
-            <div class="form-group-inline">
+            <div class="form-group">
                 <label for="newBadgeId">New Badge ID:</label>
                 <input type="text" id="newBadgeId" placeholder="4-digit ID" maxlength="4" required>
-                <div id="newBadgeValidation" class="validation-message"></div>
+                <div id="newBadgeValidation"></div>
             </div>
             <div class="alert alert-warning">
-                <strong>Warning:</strong> Changing a student's badge will update their login credentials. Ensure the new badge is not already assigned to another student.
+                <strong>Warning:</strong> Changing a student's badge will update their login credentials.
             </div>
             <div class="modal-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('badgeManagementModal')">Cancel</button>
@@ -562,7 +849,7 @@
         <form id="hoursManagementForm" onsubmit="submitHoursChange(event)">
             <div class="form-group">
                 <label for="newRequiredHours">Required Hours:</label>
-                <input type="number" id="newRequiredHours" placeholder="e.g., 480" min="1" max="2000" required>
+                <input type="number" id="newRequiredHours" min="1" max="2000" required>
             </div>
             <div class="modal-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('hoursManagementModal')">Cancel</button>
@@ -580,7 +867,7 @@
         </div>
         <div id="statusStudentInfo"></div>
         <form id="statusManagementForm" onsubmit="submitStatusChange(event)">
-            <div class="form-group-inline">
+            <div class="form-group">
                 <label for="newStudentStatus">New Status:</label>
                 <select id="newStudentStatus" required>
                     <option value="">Select Status</option>
@@ -590,11 +877,33 @@
                 </select>
             </div>
             <div id="completionWarning" class="alert alert-warning d-none">
-                <strong>Warning:</strong> Marking a student as COMPLETED will release their badge for reuse and preserve all historical records.
+                <strong>Warning:</strong> Marking as COMPLETED will release their badge for reuse.
             </div>
             <div class="modal-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('statusManagementModal')">Cancel</button>
                 <button type="submit" class="btn btn-primary" id="statusSubmitBtn">Update Status</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="deleteStudentModal" class="modal">
+    <div class="modal-content modal-lg">
+        <div class="modal-header">
+            <h3>
+                🗑️ Remove Student
+            </h3>
+            <button class="modal-close" onclick="closeModal('deleteStudentModal')">×</button>
+        </div>
+
+        <div id="deleteStudentInfo">
+            <!-- Content will be dynamically loaded by showDeleteStudentModal() -->
+        </div>
+
+        <form id="deleteStudentForm" onsubmit="submitDeleteStudent(event)">
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('deleteStudentModal')">Cancel</button>
+                <button type="submit" class="btn btn-warning" id="deleteSubmitBtn">Deactivate Student</button>
             </div>
         </form>
     </div>
@@ -610,7 +919,6 @@
     </div>
 </div>
 
-<!-- Schedule Management -->
 <div id="scheduleManagementModal" class="modal">
     <div class="modal-content">
         <div class="modal-header">
@@ -619,19 +927,19 @@
         </div>
         <div id="scheduleStudentInfo"></div>
         <form id="scheduleManagementForm" onsubmit="submitScheduleChange(event)">
-            <div class="form-group-inline">
+            <div class="form-group">
                 <label for="scheduleStartTime">Start Time:</label>
                 <input type="time" id="scheduleStartTime" required>
             </div>
-            <div class="form-group-inline">
+            <div class="form-group">
                 <label for="scheduleEndTime">End Time:</label>
                 <input type="time" id="scheduleEndTime" required>
             </div>
-            <div class="form-group-inline">
+            <div class="form-group">
                 <label for="gracePeriodMinutes">Grace Period (minutes):</label>
                 <input type="number" id="gracePeriodMinutes" min="0" max="30" value="5" required>
             </div>
-            <div class="form-group-inline">
+            <div class="form-group">
                 <label for="scheduleActive">Active Schedule:</label>
                 <select id="scheduleActive" required>
                     <option value="true">Yes</option>
@@ -645,12 +953,174 @@
         </form>
     </div>
 </div>
-<!-- Loading Spinner -->
+
+<div id="allTasksModal" class="modal">
+    <div class="modal-content modal-lg">
+        <div class="modal-header">
+            <h3>📋 Complete Task List</h3>
+            <button class="modal-close" onclick="closeModal('allTasksModal')">×</button>
+        </div>
+        <div id="allTasksContent">
+            <div class="loading-state">Loading tasks...</div>
+        </div>
+    </div>
+</div>
+
+<div id="studentRegistrationModal" class="modal">
+    <div class="modal-content modal-lg">
+        <div class="modal-header">
+            <h3>📝 Register New Student</h3>
+            <button class="modal-close" onclick="closeModal('studentRegistrationModal')">×</button>
+        </div>
+
+        <form id="studentRegistrationFormNew" onsubmit="registerStudentWithSchedule(event)">
+            <div class="form-section">
+                <h4>👤 Student Information</h4>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="regIdBadgeNew">ID Badge Number:</label>
+                        <input type="text" id="regIdBadgeNew" placeholder="4-digit ID" maxlength="4" required>
+                        <div id="regBadgeValidation"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="regFullNameNew">Full Name:</label>
+                        <input type="text" id="regFullNameNew" placeholder="Lastname, Firstname MI" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="regSchoolNew">School/University:</label>
+                        <input type="text" id="regSchoolNew" placeholder="Enter school name" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="regRequiredHoursNew">Required Hours:</label>
+                        <input type="number" id="regRequiredHoursNew" placeholder="e.g., 480" min="1" max="2000" required>
+                        <small>Typical OJT programs: 240-600 hours</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h4>📅 Work Schedule (Optional)</h4>
+
+                <div class="alert alert-info">
+                    <strong>ℹ️ Schedule Information:</strong> Setting a schedule helps track late arrivals.
+                </div>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="regStartTimeNew">Start Time:</label>
+                        <input type="time" id="regStartTimeNew" value="10:00">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="regEndTimeNew">End Time:</label>
+                        <input type="time" id="regEndTimeNew" value="19:00">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="regGracePeriodNew">Grace Period (minutes):</label>
+                        <input type="number" id="regGracePeriodNew" value="5" min="0" max="30">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="regScheduleActiveNew">Activate Schedule:</label>
+                        <select id="regScheduleActiveNew">
+                            <option value="true">Yes - Enable schedule tracking</option>
+                            <option value="false">No - Set schedule later</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('studentRegistrationModal')">Cancel</button>
+                <button type="button" class="btn btn-secondary" onclick="clearRegistrationFormNew()">Clear Form</button>
+                <button type="submit" class="btn btn-success">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    Register Student
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Cleanup Notifications Modal -->
+<div id="cleanupNotificationsModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>
+                🧹 Cleanup Old Notifications
+            </h3>
+            <button class="modal-close" onclick="closeModal('cleanupNotificationsModal')">×</button>
+        </div>
+
+        <div class="cleanup-info">
+            <h4>What will be deleted?</h4>
+            <ul>
+                <li>All notifications older than the specified number of days</li>
+                <li>Both read and unread notifications will be removed</li>
+                <li>This action cannot be undone</li>
+            </ul>
+        </div>
+
+        <form id="cleanupNotificationsForm" onsubmit="submitCleanupNotifications(event)">
+            <div class="form-group">
+                <label for="cleanupDays">Delete notifications older than:</label>
+                <input type="number"
+                       id="cleanupDays"
+                       min="1"
+                       max="365"
+                       value="30"
+                       required>
+                <small>Enter number of days (1-365)</small>
+            </div>
+
+            <div class="cleanup-preview">
+                <div class="cleanup-preview-item">
+                    <span class="cleanup-preview-label">Typical options:</span>
+                    <span class="cleanup-preview-value"></span>
+                </div>
+                <div class="cleanup-preview-item">
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('cleanupDays').value='7'">7 days</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('cleanupDays').value='30'">30 days</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('cleanupDays').value='90'">90 days</button>
+                </div>
+            </div>
+
+            <div class="alert alert-warning">
+                <strong>⚠️ Warning:</strong> This action will permanently delete all matching notifications and cannot be undone.
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('cleanupNotificationsModal')">Cancel</button>
+                <button type="submit" class="btn btn-warning">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                    Cleanup Notifications
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="live-task-loading" id="liveTaskLoadingIndicator">
+    <div class="spinner"></div>
+    <span>Updating tasks...</span>
+</div>
+
 <div id="loading" class="loading">
     <div class="spinner"></div>
     <p>Loading...</p>
 </div>
 
+<script src="notification.js"></script>
 <script src="admin.js"></script>
 </body>
 </html>

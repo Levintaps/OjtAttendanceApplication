@@ -364,45 +364,6 @@ body {
     transform: translateY(-2px);
 }
 
-/* Dashboard Styles */
-.dashboard-card {
-    background: var(--bg-primary);
-    border-radius: var(--border-radius-xl);
-    box-shadow: var(--shadow-md);
-    border: 1px solid var(--border-color);
-    margin: 2rem 0;
-    transition: var(--transition-normal);
-    display: none;
-}
-
-.dashboard-card.show {
-    display: block;
-    animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.dashboard-card:hover {
-    box-shadow: var(--shadow-lg);
-    transform: translateY(-2px);
-}
-
-.dashboard-header {
-    padding: 2rem 2rem 1rem;
-    border-bottom: 2px solid var(--border-color);
-    text-align: center;
-}
-
-.dashboard-header h3 {
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: 0.5rem;
-}
-
-.dashboard-header .student-info {
-    color: var(--text-muted);
-    font-size: 0.9rem;
-}
-
 .status-metrics {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -988,3 +949,67 @@ body {
 .align-center { align-items: center; }
 .justify-center { justify-content: center; }
 .justify-between { justify-content: space-between; }
+
+
+#dashboardModal .modal-content {
+    padding: 2rem;
+}
+
+#dashboardModal .modal-header {
+    margin-bottom: 1.5rem;
+}
+
+#dashboardModal .history-section {
+    padding: 0;
+}
+
+#dashboardModal .status-metrics {
+    padding: 0;
+    margin-bottom: 1.5rem;
+}
+
+.btn-report {
+    background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+    color: white;
+}
+
+.btn-report:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(139, 92, 246, 0.3);
+}
+
+.week-selector {
+    appearance: none;
+    cursor: pointer;
+    transition: var(--transition-normal);
+}
+
+.week-selector:hover {
+    border-color: var(--primary-color);
+}
+
+.week-selector:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.week-info {
+    line-height: 1.6;
+}
+
+.week-info strong {
+    color: var(--text-primary);
+}
+
+.form-control {
+    background: var(--bg-secondary);
+    transition: var(--transition-normal);
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    background: var(--bg-primary);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
