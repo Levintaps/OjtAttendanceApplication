@@ -805,14 +805,34 @@ public class AttendanceService {
         Student student = studentRepository.findByIdBadge(idBadge)
                 .orElseThrow(() -> new RuntimeException("Student not found with ID badge: " + idBadge));
 
-        LocalDate today = LocalDate.now();
+        // Get active session first (if any)
+        Optional<AttendanceRecord> activeSessionOpt = attendanceRecordRepository
+                .findActiveSessionByStudent(student);
 
-        // Get today's attendance record
-        List<AttendanceRecord> todayRecords = attendanceRecordRepository
-                .findByStudentAndAttendanceDate(student, today);
+        AttendanceRecord todayRecord = null;
+        List<TaskEntry> todayTasks = new ArrayList<>();
 
-        AttendanceRecord todayRecord = todayRecords.isEmpty() ? null :
-                todayRecords.stream().max(Comparator.comparing(AttendanceRecord::getId)).orElse(null);
+        if (activeSessionOpt.isPresent()) {
+            // Use the active session as "today's" record
+            todayRecord = activeSessionOpt.get();
+
+            // Get tasks for this active session
+            todayTasks = taskEntryRepository
+                    .findByAttendanceRecordOrderByCompletedAtAsc(todayRecord);
+        } else {
+            // No active session, get today's completed records
+            LocalDate today = LocalDate.now();
+            List<AttendanceRecord> todayRecords = attendanceRecordRepository
+                    .findByStudentAndAttendanceDate(student, today);
+
+            todayRecord = todayRecords.isEmpty() ? null :
+                    todayRecords.stream().max(Comparator.comparing(AttendanceRecord::getId)).orElse(null);
+
+            if (todayRecord != null) {
+                todayTasks = taskEntryRepository
+                        .findByAttendanceRecordOrderByCompletedAtAsc(todayRecord);
+            }
+        }
 
         // Get all attendance records for the student
         List<AttendanceRecord> allRecords = attendanceRecordRepository
@@ -823,31 +843,17 @@ public class AttendanceService {
                 .map(this::convertToDto)
                 .collect(Collectors.toList());
 
-        // Determine current status and today's information
-        String currentStatus = "TIMED_OUT";
-        Double todayHours = 0.0;
-        Integer todayTasksCount = 0;
-        Boolean canLogTasks = false;
-        Long activeSessionId = null;
-        List<TaskEntryDto> todayTasks = new ArrayList<>();
+        // Convert tasks to DTOs
+        List<TaskEntryDto> taskDtos = todayTasks.stream()
+                .map(this::convertToTaskDto)
+                .collect(Collectors.toList());
 
-        if (todayRecord != null) {
-            currentStatus = todayRecord.getStatus().name();
-            todayHours = todayRecord.getTotalHours() != null ? todayRecord.getTotalHours() : 0.0;
-
-            // Get today's tasks
-            List<TaskEntry> tasks = taskEntryRepository.findByAttendanceRecordOrderByCompletedAtAsc(todayRecord);
-            todayTasksCount = tasks.size();
-            todayTasks = tasks.stream()
-                    .map(this::convertToTaskDto)
-                    .collect(Collectors.toList());
-
-            // Check if student can log more tasks
-            if (todayRecord.getStatus() == AttendanceStatus.TIMED_IN) {
-                canLogTasks = true;
-                activeSessionId = todayRecord.getId();
-            }
-        }
+        // Determine current status
+        String currentStatus = activeSessionOpt.isPresent() ? "TIMED_IN" : "TIMED_OUT";
+        Double todayHours = todayRecord != null ? (todayRecord.getTotalHours() != null ? todayRecord.getTotalHours() : 0.0) : 0.0;
+        Integer todayTasksCount = todayTasks.size();
+        Boolean canLogTasks = activeSessionOpt.isPresent();
+        Long activeSessionId = activeSessionOpt.map(AttendanceRecord::getId).orElse(null);
 
         return new StudentDashboardResponse(
                 student.getIdBadge(),
@@ -859,7 +865,7 @@ public class AttendanceService {
                 todayTasksCount,
                 canLogTasks,
                 activeSessionId,
-                todayTasks
+                taskDtos
         );
     }
 

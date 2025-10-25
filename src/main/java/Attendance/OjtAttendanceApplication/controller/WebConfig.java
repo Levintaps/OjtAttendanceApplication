@@ -9,7 +9,7 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOrigins("*", "https://tera-attendance-system.vercel.app/")  // In production, replace with specific origins
+                .allowedOriginPatterns("*", "https://tera-attendance-system.vercel.app/")  // In production, replace with specific origins
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(false)

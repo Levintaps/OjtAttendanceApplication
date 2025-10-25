@@ -438,22 +438,86 @@ async function updateButtonStates(studentData = null) {
     }
 }
 
+function createDashboardTabs(studentData) {
+    const dynamicMetric = document.getElementById('dynamicMetric');
+
+    if (!dynamicMetric) return;
+
+    const totalHoursValue = parseFloat(studentData.totalAccumulatedHours || 0);
+    const requiredHoursValue = studentData.requiredHours ? parseFloat(studentData.requiredHours) : 0;
+    const hasRequiredHours = requiredHoursValue > 0;
+    const remainingHours = hasRequiredHours ? requiredHoursValue - totalHoursValue : 0;
+    const estimatedDays = hasRequiredHours ? calculateEstimatedDays(remainingHours, studentData) : 0;
+    const taskCount = studentData.todayTasksCount || 0;
+
+    const tabsHTML = `
+        <div class="dashboard-tabs">
+            <div class="tab-buttons">
+                <button class="tab-btn active" data-tab="tasks">
+                    <span class="tab-icon">📋</span>
+                    <span class="tab-label">Tasks</span>
+                </button>
+                <button class="tab-btn" data-tab="days">
+                    <span class="tab-icon">📅</span>
+                    <span class="tab-label">Days Left</span>
+                </button>
+            </div>
+            <div class="tab-content">
+                <div class="tab-pane active" id="tab-tasks">
+                    <div class="label">Total Tasks Today</div>
+                    <div class="value" id="dynamicValue">${taskCount}</div>
+                </div>
+                <div class="tab-pane" id="tab-days">
+                    <div class="label">Days to Complete</div>
+                    <div class="value" id="daysValue">
+                        ${hasRequiredHours && totalHoursValue < requiredHoursValue
+                            ? `${estimatedDays} day(s)`
+                            : hasRequiredHours
+                                ? '<span style="color: var(--success-color);">Complete!</span>'
+                                : 'Not Set'}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    dynamicMetric.innerHTML = tabsHTML;
+
+    // Add tab switching functionality
+    const tabButtons = dynamicMetric.querySelectorAll('.tab-btn');
+    const tabPanes = dynamicMetric.querySelectorAll('.tab-pane');
+
+    tabButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const targetTab = button.getAttribute('data-tab');
+
+            // Remove active class from all buttons and panes
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            tabPanes.forEach(pane => pane.classList.remove('active'));
+
+            // Add active class to clicked button and corresponding pane
+            button.classList.add('active');
+            document.getElementById(`tab-${targetTab}`).classList.add('active');
+        });
+    });
+}
+
 function calculateEstimatedDays(remainingHours, studentData) {
     if (remainingHours <= 0) return 0;
-    
+
     let averageDailyHours = STANDARD_WORK_HOURS;
-    
+
     if (studentData.attendanceHistory && studentData.attendanceHistory.length > 0) {
         const recentRecords = studentData.attendanceHistory.slice(0, 10);
         const totalRecentHours = recentRecords.reduce((sum, record) => {
             return sum + (parseFloat(record.totalHours) || 0);
         }, 0);
-        
+
         if (recentRecords.length > 0) {
             averageDailyHours = totalRecentHours / recentRecords.length;
         }
     }
-    
+
     const hoursPerDay = Math.max(averageDailyHours, STANDARD_WORK_HOURS, 4);
     const estimatedDays = Math.ceil(remainingHours / hoursPerDay);
     return estimatedDays;
@@ -535,9 +599,12 @@ function updateUIAfterTimeIn(data) {
     timeOutBtn.style.display = 'flex';
     currentTimeInTimestamp = new Date(data.timeIn);
     startTodayHoursTimer();
+
+    // Use SweetAlert2 instead of toast
+    showTimeInSuccess(data.studentName, formatTime(data.timeIn));
 }
 
-// FIXED TIME OUT - Shows task summary first, then TOTP
+// TIME OUT - Shows task summary first, then TOTP
 async function performTimeOut() {
     const idBadge = elements.idBadge().value.trim();
 
@@ -550,14 +617,14 @@ async function performTimeOut() {
     // Get existing tasks first
     const existingTasks = await getCurrentSessionTasks(idBadge);
 
-    if (existingTasks.length > 0) {
-        // Show task summary modal (old flow)
-        showTaskSummaryModal(existingTasks);
-    } else {
-        // No tasks, show regular task input modal
-        pendingTimeOut = true;
-        showTaskModal();
+    // Check if user has logged any tasks
+    if (existingTasks.length === 0) {
+        showAlert('You must log at least one task before timing out. Please add a task using the "Add Task" button.', 'warning');
+        return;
     }
+
+    // Has tasks - show task summary modal
+    showTaskSummaryModal(existingTasks);
 }
 
 // Create TOTP verify modal
@@ -575,7 +642,7 @@ function createTotpVerifyModal() {
             <form id="totpActionForm" onsubmit="submitWithTotp(event)">
                 <div class="form-group">
                     <label for="totpActionCode">Authenticator Code:</label>
-                    <input type="text" id="totpActionCode" maxlength="6" placeholder="000000" 
+                    <input type="text" id="totpActionCode" maxlength="6" placeholder="000000"
                         style="text-align: center; font-size: 2rem; letter-spacing: 0.5em; font-weight: 700;" required>
                 </div>
                 <input type="hidden" id="totpTasksData" value="">
@@ -587,25 +654,25 @@ function createTotpVerifyModal() {
         </div>
     `;
     document.body.appendChild(modal);
-    
+
     const codeInput = modal.querySelector('#totpActionCode');
     codeInput.addEventListener('input', function() {
         this.value = this.value.replace(/\D/g, '').slice(0, 6);
     });
-    
+
     return modal;
 }
 
 // Submit with TOTP verification
 async function submitWithTotp(event) {
     event.preventDefault();
-    
+
     const idBadge = elements.idBadge().value.trim();
     const totpCode = document.getElementById('totpActionCode').value.trim();
     const modal = document.getElementById('totpVerifyModal');
     const action = modal.dataset.action;
     const tasksCompleted = document.getElementById('totpTasksData').value || '';
-    
+
     if (totpCode.length !== 6) {
         showAlert('Please enter a valid 6-digit code', 'error');
         return;
@@ -630,7 +697,7 @@ async function submitWithTotp(event) {
 
         if (response.ok) {
             if (action === 'TIME_IN') {
-                showAlert(`Welcome ${data.studentName}! Timed in successfully at ${formatTime(data.timeIn)}. Have a productive day!`, 'success');
+                // showAlert(`Welcome ${data.studentName}! Timed in successfully at ${formatTime(data.timeIn)}. Have a productive day!`, 'success');
                 updateUIAfterTimeIn(data);
             } else {
                 handleSuccessfulTimeOut(data);
@@ -652,16 +719,16 @@ async function submitWithTotp(event) {
 function showTotpVerificationModal(action, tasksCompleted = '') {
     const modal = document.getElementById('totpVerifyModal') || createTotpVerifyModal();
     const actionText = action === 'TIME_IN' ? 'Time In' : 'Time Out';
-    
+
     modal.querySelector('.modal-header h3').textContent = `${actionText} - Enter Code`;
     modal.querySelector('.modal-header p').textContent = 'Enter the 6-digit code from your Google Authenticator app';
-    
+
     modal.dataset.action = action;
     document.getElementById('totpTasksData').value = tasksCompleted;
-    
+
     modal.classList.add('show');
     document.body.style.overflow = 'hidden';
-    
+
     modal.querySelector('#totpActionCode').value = '';
     modal.querySelector('#totpActionCode').focus();
 }
@@ -674,7 +741,7 @@ async function submitTimeOut() {
     if (!validateTimeOutForm(tasksCompleted)) return;
 
     closeTaskModal();
-    
+
     // Now show TOTP modal with the tasks
     showTotpVerificationModal('TIME_OUT', tasksCompleted);
 }
@@ -695,10 +762,14 @@ function handleSuccessfulTimeOut(data) {
         timestamp: Date.now()
     };
 
-    const breakMessage = data.breakDeducted ? ' (1hr lunch break deducted)' : '';
-    const overtimeMessage = data.overtimeHours > 0 ? ` including ${data.overtimeHours}h overtime` : '';
-
-    showAlert(`Great work, ${data.studentName}! Timed out at ${formatTime(data.timeOut)}. Total: ${data.totalHours}h${breakMessage}${overtimeMessage}`, 'success');
+    // Use SweetAlert2 instead of toast
+    showTimeOutSuccess(
+        data.studentName,
+        formatTime(data.timeOut),
+        data.totalHours,
+        data.breakDeducted,
+        data.overtimeHours
+    );
 
     const studentData = { currentStatus: 'TIMED_OUT', attendanceHistory: [{ timeOut: data.timeOut }] };
     updateButtonStates(studentData);
@@ -738,10 +809,43 @@ async function addTask() {
 function showAddTaskModal() {
     const modal = document.getElementById('addTaskModal');
     if (modal) {
-        document.getElementById('taskDescription').value = '';
-        document.getElementById('taskDescription').focus();
+        const textarea = document.getElementById('taskDescription');
+        textarea.value = '';
+        textarea.focus();
+
+        // Add Shift+Enter handler for multiple tasks
+        textarea.removeEventListener('keydown', handleTaskTextareaKeydown);
+        textarea.addEventListener('keydown', handleTaskTextareaKeydown);
+
         modal.classList.add('show');
         document.body.style.overflow = 'hidden';
+
+        // Update helper text if not already added
+        updateTaskModalHelper();
+    }
+}
+
+// Handle keyboard events in task textarea
+function handleTaskTextareaKeydown(e) {
+    if (e.key === 'Enter' && e.shiftKey) {
+        // Allow Shift+Enter to create new line for multiple tasks
+        return;
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+        // Prevent regular Enter from submitting
+        e.preventDefault();
+    }
+}
+
+function updateTaskModalHelper() {
+    const modal = document.getElementById('addTaskModal');
+    const formGroup = modal.querySelector('.form-group');
+
+    if (!document.getElementById('task-helper-text')) {
+        const helperText = document.createElement('div');
+        helperText.id = 'task-helper-text';
+        helperText.style.cssText = 'font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem; font-style: italic;';
+        helperText.innerHTML = '💡 <strong>Tip:</strong> Press <kbd style="background: var(--bg-tertiary); padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">Shift + Enter</kbd> to add multiple tasks (each line = 1 task)';
+        formGroup.appendChild(helperText);
     }
 }
 
@@ -765,6 +869,16 @@ async function submitTask(event) {
         return;
     }
 
+    // Split by newlines to handle multiple tasks
+    const taskLines = taskDescription.split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length >= 5); // Filter out empty or too short lines
+
+    if (taskLines.length === 0) {
+        showAlert('Please enter at least one valid task (minimum 5 characters per task)', 'warning');
+        return;
+    }
+
     showLoading();
     closeAddTaskModal();
 
@@ -777,110 +891,98 @@ async function submitTask(event) {
                             String(now.getMinutes()).padStart(2, '0') + ':' +
                             String(now.getSeconds()).padStart(2, '0');
 
-        const requestBody = {
-            idBadge: idBadge,
-            taskDescription: taskDescription,
-            completedAt: completedAt,
-            addedDuringTimeout: false
-        };
+        let successCount = 0;
+        let failCount = 0;
 
-        const response = await fetch(`${API_BASE_URL}/tasks/add`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
-        });
+        // Submit each task separately
+        for (const task of taskLines) {
+            const requestBody = {
+                idBadge: idBadge,
+                taskDescription: task,
+                completedAt: completedAt,
+                addedDuringTimeout: false
+            };
 
-        if (response.ok) {
             try {
-                const updatedDashboard = await fetch(`${API_BASE_URL}/students/dashboard/${idBadge}`);
-                if (updatedDashboard.ok) {
-                    const dashboardData = await updatedDashboard.json();
-                    const taskCount = dashboardData.todayTasksCount || 'N/A';
-                    showAlert(`Task logged successfully! Total tasks today: ${taskCount}`, 'success');
-                    
-                    if (elements.dashboardCard().classList.contains('show')) {
-                        await viewDashboard();
-                    }
+                const response = await fetch(`${API_BASE_URL}/tasks/add`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (response.ok) {
+                    successCount++;
                 } else {
-                    showAlert('Task logged successfully!', 'success');
+                    failCount++;
                 }
-            } catch (dashboardError) {
-                showAlert('Task logged successfully!', 'success');
+            } catch (error) {
+                failCount++;
             }
-        } else {
-            const errorText = await response.text();
-            let errorMessage = 'Failed to log task';
-            try {
-                const errorData = JSON.parse(errorText);
-                errorMessage = errorData.message || errorMessage;
-            } catch (e) {
-                errorMessage = errorText || errorMessage;
+        }
+
+        // Fetch updated dashboard data to get accurate task count
+        try {
+            const updatedDashboard = await fetch(`${API_BASE_URL}/students/dashboard/${idBadge}`);
+            if (updatedDashboard.ok) {
+                const dashboardData = await updatedDashboard.json();
+                const taskCount = dashboardData.todayTasksCount || 0;
+
+                hideLoading();
+
+                if (failCount === 0) {
+                    // All tasks succeeded
+                    showTaskAddedSuccess(taskCount, taskLines.length);
+                } else if (successCount > 0) {
+                    // Some tasks succeeded
+                    showAlert(`${successCount} task(s) added successfully. ${failCount} failed. Total tasks today: ${taskCount}`, 'warning');
+                } else {
+                    // All failed
+                    showErrorAlert('Failed to add tasks. Please try again.', 'Failed to Log Tasks');
+                }
+
+                // Update the dynamic metric in dashboard if it's open
+                const dynamicValue = document.getElementById('dynamicValue');
+                if (dynamicValue && elements.dashboardCard().classList.contains('show')) {
+                    dynamicValue.textContent = taskCount;
+                    setTimeout(() => {
+                        viewDashboard();
+                    }, 500);
+                }
+            } else {
+                hideLoading();
+                if (failCount === 0) {
+                    showTaskAddedSuccess(successCount, taskLines.length);
+                } else {
+                    showAlert(`${successCount} task(s) added, ${failCount} failed`, 'warning');
+                }
             }
-            showAlert(errorMessage, 'error');
+        } catch (dashboardError) {
+            console.error('Failed to fetch updated task count:', dashboardError);
+            hideLoading();
+            if (failCount === 0) {
+                showTaskAddedSuccess(successCount, taskLines.length);
+            }
         }
     } catch (error) {
         console.error('Network error:', error);
-        showAlert('Network error: Unable to connect to server', 'error');
-    } finally {
         hideLoading();
+        showErrorAlert('Network error: Unable to connect to server', 'Connection Error');
     }
 }
 
 async function getCurrentSessionTasks(idBadge) {
     try {
-        const response = await fetch(`${API_BASE_URL}/attendance/session/${idBadge}`);
-        if (response.ok) {
-            const dashboardResponse = await fetch(`${API_BASE_URL}/students/dashboard/${idBadge}`);
-            if (dashboardResponse.ok) {
-                const dashboardData = await dashboardResponse.json();
-                return dashboardData.todayTasks || [];
-            }
+        // Get dashboard which now properly handles active sessions
+        const dashboardResponse = await fetch(`${API_BASE_URL}/students/dashboard/${idBadge}`);
+        if (dashboardResponse.ok) {
+            const dashboardData = await dashboardResponse.json();
+            return dashboardData.todayTasks || [];
         }
         return [];
     } catch (error) {
         console.error('Failed to get current session tasks:', error);
         return [];
     }
-}
-
-// Registration and Authentication
-async function submitRegistration() {
-    const idBadge = document.getElementById('regIdBadge').value.trim();
-    const fullName = document.getElementById('regFullName').value.trim();
-    const school = document.getElementById('regSchool').value.trim();
-
-    if (!validateRegistrationForm(idBadge, fullName, school)) return;
-
-    showLoading();
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/students/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idBadge, fullName, school })
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-            handleSuccessfulRegistration(data, idBadge);
-        } else {
-            showAlert(data.message || 'Registration failed', 'error');
-        }
-
-    } catch (error) {
-        showAlert('Registration failed. Please check connection and try again.', 'error');
-    } finally {
-        hideLoading();
-    }
-}
-
-function handleSuccessfulRegistration(data, idBadge) {
-    showAlert(`Welcome ${data.fullName}! Registration successful. You can now log attendance.`, 'success');
-    closeRegisterModal();
-    elements.idBadge().value = idBadge;
-    elements.idBadge().focus();
-    setTimeout(() => checkStudentStatus(idBadge), 500);
 }
 
 function checkAdminAccess() {
@@ -963,8 +1065,6 @@ async function displayDashboard(data) {
     const dashboardTitle = document.getElementById('dashboardTitle');
     const studentInfo = document.getElementById('studentInfo');
     const currentStatus = document.getElementById('currentStatus');
-    const dynamicLabel = document.getElementById('dynamicLabel');
-    const dynamicValue = document.getElementById('dynamicValue');
     const totalHours = document.getElementById('totalHours');
     const requiredHours = document.getElementById('requiredHours');
     const progressFill = document.getElementById('progressFill');
@@ -999,44 +1099,53 @@ async function displayDashboard(data) {
         console.error('Failed to fetch student full data:', error);
     }
 
-    const totalHoursValue = parseFloat(studentFullData.totalAccumulatedHours || 0);
+const totalHoursValue = parseFloat(studentFullData.totalAccumulatedHours || 0);
     const requiredHoursValue = studentFullData.requiredHours ? parseFloat(studentFullData.requiredHours) : 0;
     const hasRequiredHours = requiredHoursValue > 0;
 
+    // Create tabs when timed in, regular display when timed out
     if (actualStatus === 'TIMED_IN') {
-        dynamicLabel.textContent = 'Total Tasks Today';
-        const taskCount = studentFullData.todayTasksCount || 0;
-        dynamicValue.textContent = taskCount;
-        dynamicValue.style.color = 'var(--text-primary)';
-        
+        createDashboardTabs(studentFullData);
         startTaskCountUpdate(studentFullData.idBadge);
-        
+
         if (activeRecord) {
             currentTimeInTimestamp = new Date(activeRecord.timeIn);
             startTodayHoursTimer();
         }
     } else {
         stopTaskCountUpdate();
-        
-        if (hasRequiredHours && totalHoursValue < requiredHoursValue) {
-            dynamicLabel.textContent = 'Days to Complete';
-            const remainingHours = requiredHoursValue - totalHoursValue;
-            const estimatedDays = calculateEstimatedDays(remainingHours, studentFullData);
-            dynamicValue.textContent = `${estimatedDays} day(s)`;
-            dynamicValue.style.color = 'var(--info-color)';
-        } else if (hasRequiredHours && totalHoursValue >= requiredHoursValue) {
-            dynamicLabel.textContent = 'Status';
-            dynamicValue.textContent = 'Complete!';
-            dynamicValue.style.color = 'var(--success-color)';
-        } else {
-            dynamicLabel.textContent = 'Required Hours';
-            dynamicValue.textContent = 'Not Set';
-            dynamicValue.style.color = 'var(--text-muted)';
+
+        // For timed out status, show regular metric display
+        const dynamicMetric = document.getElementById('dynamicMetric');
+        if (dynamicMetric) {
+            dynamicMetric.innerHTML = `
+                <div class="label" id="dynamicLabel">Days to Complete</div>
+                <div class="value" id="dynamicValue">0</div>
+            `;
+
+            const dynamicLabel = document.getElementById('dynamicLabel');
+            const dynamicValue = document.getElementById('dynamicValue');
+
+            if (hasRequiredHours && totalHoursValue < requiredHoursValue) {
+                const remainingHours = requiredHoursValue - totalHoursValue;
+                const estimatedDays = calculateEstimatedDays(remainingHours, studentFullData);
+                dynamicLabel.textContent = 'Days to Complete';
+                dynamicValue.textContent = `${estimatedDays} day(s)`;
+                dynamicValue.style.color = 'var(--info-color)';
+            } else if (hasRequiredHours && totalHoursValue >= requiredHoursValue) {
+                dynamicLabel.textContent = 'Status';
+                dynamicValue.textContent = 'Complete!';
+                dynamicValue.style.color = 'var(--success-color)';
+            } else {
+                dynamicLabel.textContent = 'Required Hours';
+                dynamicValue.textContent = 'Not Set';
+                dynamicValue.style.color = 'var(--text-muted)';
+            }
         }
     }
 
     totalHours.textContent = formatHoursMinutes(totalHoursValue);
-    
+
     if (hasRequiredHours) {
         requiredHours.textContent = formatHoursMinutes(requiredHoursValue);
     } else {
@@ -1047,7 +1156,7 @@ async function displayDashboard(data) {
         const progressPercent = Math.min((totalHoursValue / requiredHoursValue) * 100, 100);
         progressFill.style.width = progressPercent.toFixed(1) + '%';
         progressPercentage.textContent = progressPercent.toFixed(1) + '%';
-        
+
         const progressClass = getProgressClass(progressPercent);
         progressFill.className = `progress-fill-dashboard ${progressClass}`;
     } else {
@@ -1057,13 +1166,13 @@ async function displayDashboard(data) {
     }
 
     if (!document.getElementById('weeklyReportBtn')) {
-            const weeklyBtn = document.createElement('button');
-            weeklyBtn.id = 'weeklyReportBtn';
-            weeklyBtn.className = 'btn btn-info';
-            weeklyBtn.innerHTML = '📄 Weekly Report';
-            weeklyBtn.onclick = () => showWeeklyReportOptions();
+        const weeklyBtn = document.createElement('button');
+        weeklyBtn.id = 'weeklyReportBtn';
+        weeklyBtn.className = 'btn btn-info';
+        weeklyBtn.innerHTML = '📄 Weekly Report';
+        weeklyBtn.onclick = () => showWeeklyReportOptions();
 
-            modalActions.insertBefore(weeklyBtn, modalActions.firstChild);
+        modalActions.insertBefore(weeklyBtn, modalActions.firstChild);
     }
 
     dashboardModal.classList.add('show');
@@ -1133,21 +1242,41 @@ function startTaskCountUpdate(idBadge) {
     if (taskCountInterval) {
         clearInterval(taskCountInterval);
     }
-    
+
     taskCountInterval = setInterval(async () => {
         try {
             const response = await fetch(`${API_BASE_URL}/students/dashboard/${idBadge}`);
             if (response.ok) {
                 const data = await response.json();
+
+                // Update task count - this now reflects the ACTIVE SESSION
                 const dynamicValue = document.getElementById('dynamicValue');
                 if (dynamicValue) {
                     dynamicValue.textContent = data.todayTasksCount || 0;
                 }
+
+                // Update days value if it exists
+                const daysValue = document.getElementById('daysValue');
+                if (daysValue) {
+                    const totalHoursValue = parseFloat(data.totalAccumulatedHours || 0);
+                    const requiredHoursValue = data.requiredHours ? parseFloat(data.requiredHours) : 0;
+                    const hasRequiredHours = requiredHoursValue > 0;
+
+                    if (hasRequiredHours && totalHoursValue < requiredHoursValue) {
+                        const remainingHours = requiredHoursValue - totalHoursValue;
+                        const estimatedDays = calculateEstimatedDays(remainingHours, data);
+                        daysValue.innerHTML = `${estimatedDays} day(s)`;
+                    } else if (hasRequiredHours && totalHoursValue >= requiredHoursValue) {
+                        daysValue.innerHTML = '<span style="color: var(--success-color);">Complete!</span>';
+                    } else {
+                        daysValue.textContent = 'Not Set';
+                    }
+                }
             }
         } catch (error) {
-            console.error('Failed to update task count:', error);
+            console.error('Failed to update dashboard metrics:', error);
         }
-    }, 30000);
+    }, 120000); // Update every 2 minutes
 }
 
 function stopTaskCountUpdate() {
@@ -1214,7 +1343,7 @@ async function downloadReport() {
     const idBadge = elements.idBadge().value.trim();
 
     if (!validateIdBadge(idBadge)) {
-        showAlert('Please enter your ID badge first', 'error');
+        showErrorAlert('Please enter your ID badge first');
         return;
     }
 
@@ -1238,15 +1367,17 @@ async function downloadReport() {
             document.body.removeChild(a);
             window.URL.revokeObjectURL(url);
 
-            showAlert('Report downloaded successfully!', 'success');
+            hideLoading();
+            // Use SweetAlert2 instead of toast
+            showCSVDownloadSuccess();
         } else {
-            showAlert('Failed to download report', 'error');
+            hideLoading();
+            showErrorAlert('Failed to download report');
         }
 
     } catch (error) {
-        showAlert('Failed to download report. Please try again.', 'error');
-    } finally {
         hideLoading();
+        showErrorAlert('Failed to download report. Please try again.');
     }
 }
 
@@ -1381,9 +1512,9 @@ function showTaskSummaryModal(tasks) {
 // FIXED: Enhanced Time Out - Shows TOTP after task review
 async function submitEnhancedTimeOut() {
     const additionalTasks = document.getElementById('additionalTasks')?.value.trim() || '';
-    
+
     closeTaskModal();
-    
+
     // Show TOTP modal with the additional tasks
     showTotpVerificationModal('TIME_OUT', additionalTasks);
 }
@@ -1841,7 +1972,7 @@ async function downloadCurrentWeek() {
     const idBadge = elements.idBadge().value.trim();
 
     if (!validateIdBadge(idBadge)) {
-        showAlert('Please enter your ID badge', 'error');
+        showErrorAlert('Please enter your ID badge');
         return;
     }
 
@@ -1864,15 +1995,17 @@ async function downloadCurrentWeek() {
             document.body.removeChild(a);
             window.URL.revokeObjectURL(downloadUrl);
 
-            showAlert('Current week report downloaded successfully!', 'success');
+            hideLoading();
+            // Use SweetAlert2 with current week info
+            showWeeklyReportDownloadSuccess(getCurrentWeekDates());
         } else {
+            hideLoading();
             throw new Error('Failed to generate current week report');
         }
 
     } catch (error) {
-        showAlert('Failed to download report: ' + error.message, 'error');
-    } finally {
         hideLoading();
+        showErrorAlert('Failed to download report: ' + error.message);
     }
 }
 
@@ -1889,7 +2022,7 @@ async function downloadWeeklyReportByNumber() {
     const weekNumber = parseInt(document.getElementById('weekSelector').value);
 
     if (!validateIdBadge(idBadge)) {
-        showAlert('Please enter your ID badge', 'error');
+        showErrorAlert('Please enter your ID badge');
         return;
     }
 
@@ -1911,16 +2044,18 @@ async function downloadWeeklyReportByNumber() {
             document.body.removeChild(a);
             window.URL.revokeObjectURL(downloadUrl);
 
-            showAlert(`Week ${weekNumber} report downloaded successfully!`, 'success');
+            hideLoading();
+            // Use SweetAlert2 with week number
+            showWeeklyReportDownloadSuccess(`Week ${weekNumber}`);
         } else {
+            hideLoading();
             const errorText = await response.text();
             throw new Error(errorText || 'Failed to generate weekly report');
         }
 
     } catch (error) {
-        showAlert('Failed to download report: ' + error.message, 'error');
-    } finally {
         hideLoading();
+        showErrorAlert('Failed to download report: ' + error.message);
     }
 }
 
@@ -1979,17 +2114,17 @@ async function downloadCustomDateRange(event) {
     const endDate = document.getElementById('customEndDate').value;
 
     if (!validateIdBadge(idBadge)) {
-        showAlert('Please enter your ID badge', 'error');
+        showErrorAlert('Please enter your ID badge');
         return;
     }
 
     if (!startDate || !endDate) {
-        showAlert('Please select both start and end dates', 'error');
+        showErrorAlert('Please select both start and end dates');
         return;
     }
 
     if (new Date(startDate) > new Date(endDate)) {
-        showAlert('Start date must be before end date', 'error');
+        showErrorAlert('Start date must be before end date');
         return;
     }
 
@@ -2011,15 +2146,17 @@ async function downloadCustomDateRange(event) {
             document.body.removeChild(a);
             window.URL.revokeObjectURL(downloadUrl);
 
-            showAlert('Custom range report downloaded successfully!', 'success');
+            hideLoading();
+            // Use SweetAlert2 with date range
+            showWeeklyReportDownloadSuccess(`${startDate} to ${endDate}`);
         } else {
+            hideLoading();
             throw new Error('Failed to generate custom date range report');
         }
 
     } catch (error) {
-        showAlert('Failed to download report: ' + error.message, 'error');
-    } finally {
         hideLoading();
+        showErrorAlert('Failed to download report: ' + error.message);
     }
 }
 

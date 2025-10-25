@@ -27,4 +27,6 @@ public interface TaskEntryRepository extends JpaRepository<TaskEntry, Long> {
             "WHERE te.attendanceRecord.student.idBadge = :idBadge " +
             "AND DATE(te.attendanceRecord.attendanceDate) = CURRENT_DATE")
     Boolean existsTasksForStudentToday(@Param("idBadge") String idBadge);
+
+    long countByAttendanceRecord(AttendanceRecord attendanceRecord);
 }

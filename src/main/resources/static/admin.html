@@ -208,392 +208,935 @@
 
         <!-- Attendance Tab -->
         <div id="attendance" class="tab-content">
-            <div class="attendance-controls">
-                <div class="controls-row">
-                    <div class="control-group">
-                        <label class="control-label">📅 Date Range</label>
-                        <div class="date-range-selector">
-                            <div class="date-range-display" onclick="toggleDateRangeDropdown()">
-                                <span id="selectedDateRange">Select date range...</span>
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="6 9 12 15 18 9"></polyline>
+            <div class="unified-layout">
+                <!-- Sidebar -->
+                <aside class="unified-sidebar">
+                    <div class="sidebar-section">
+                        <h3>📊 Quick Stats</h3>
+                        <div class="sidebar-stats">
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Total Records</span>
+                                <span class="sidebar-stat-value" id="sidebarTotalRecords">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Total Hours</span>
+                                <span class="sidebar-stat-value" id="sidebarTotalHours">0h</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Active Students</span>
+                                <span class="sidebar-stat-value" id="sidebarActiveCount">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Avg Hours</span>
+                                <span class="sidebar-stat-value" id="sidebarAvgHours">0h</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <h3>📅 Quick Filters</h3>
+                        <div class="quick-actions">
+                            <button class="quick-action-btn" onclick="filterTodayNew()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                                    <line x1="3" y1="10" x2="21" y2="10"></line>
                                 </svg>
-                            </div>
-                            <div class="date-range-dropdown" id="dateRangeDropdown">
-                                <button class="date-preset" onclick="filterTodayNew()">Today</button>
-                                <button class="date-preset" onclick="filterYesterdayNew()">Yesterday</button>
-                                <button class="date-preset" onclick="filterThisWeekNew()">This Week</button>
-                                <button class="date-preset" onclick="filterThisMonthNew()">This Month</button>
-                                <button class="date-preset" onclick="filterLast7DaysNew()">Last 7 Days</button>
-                                <button class="date-preset" onclick="filterLast30DaysNew()">Last 30 Days</button>
-                                <div class="custom-date-inputs">
-                                    <input type="date" id="customStartDate" placeholder="Start">
-                                    <input type="date" id="customEndDate" placeholder="End">
-                                    <button class="btn btn-sm btn-primary" onclick="applyCustomDateRange()">Apply</button>
-                                </div>
-                            </div>
+                                Today
+                            </button>
+                            <button class="quick-action-btn" onclick="filterYesterdayNew()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="15 18 9 12 15 6"></polyline>
+                                </svg>
+                                Yesterday
+                            </button>
+                            <button class="quick-action-btn" onclick="filterThisWeekNew()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                </svg>
+                                This Week
+                            </button>
+                            <button class="quick-action-btn" onclick="filterThisMonthNew()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                </svg>
+                                This Month
+                            </button>
+                            <button class="quick-action-btn" onclick="filterLast7DaysNew()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+                                </svg>
+                                Last 7 Days
+                            </button>
+                            <button class="quick-action-btn" onclick="filterLast30DaysNew()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                                </svg>
+                                Last 30 Days
+                            </button>
                         </div>
                     </div>
 
-                    <div class="control-group">
-                        <label class="control-label">📊 Status</label>
-                        <select class="search-bar" id="attendanceStatusFilterNew" onchange="applyAttendanceFiltersNew()">
-                            <option value="all">All Status</option>
-                            <option value="TIMED_IN">Currently Timed In</option>
-                            <option value="TIMED_OUT">Timed Out</option>
-                            <option value="AUTO_TIMED_OUT">Auto Timed Out</option>
-                            <option value="ADMIN_CORRECTED">Admin Corrected</option>
-                        </select>
-                    </div>
-
-                    <div class="control-group">
-                        <label class="control-label">🔍 Search</label>
-                        <div class="search-bar-wrapper">
-                            <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="11" cy="11" r="8"></circle>
-                                <path d="m21 21-4.35-4.35"></path>
-                            </svg>
-                            <input type="text" class="search-bar" id="attendanceSearchNew" placeholder="Search records..." onkeyup="applyAttendanceFiltersNew()" style="padding-left: 3rem;">
-                        </div>
-                    </div>
-
-                    <div class="control-group" style="flex: 0;">
-                        <label class="control-label">&nbsp;</label>
-                        <div style="display: flex; gap: 0.5rem;">
-                            <button class="btn btn-success" onclick="downloadFilteredRecordsNew()" id="downloadBtnNew" style="display: none; min-width: 20px;">
+                    <div class="sidebar-section">
+                        <h3>🔧 Actions</h3>
+                        <div class="quick-actions">
+                            <button class="quick-action-btn" onclick="downloadFilteredRecordsNew()" id="sidebarDownloadBtn" style="display: none;">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
                                 </svg>
-                                Download
+                                Download CSV
                             </button>
-                            <button class="btn btn-secondary" onclick="clearAllAttendanceFiltersNew()">
+                            <button class="quick-action-btn" onclick="clearAllAttendanceFiltersNew()">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <line x1="18" y1="6" x2="6" y2="18"></line>
                                     <line x1="6" y1="6" x2="18" y2="18"></line>
                                 </svg>
-                                Clear
+                                Clear Filters
                             </button>
                         </div>
                     </div>
-                </div>
-            </div>
+                </aside>
 
-            <div class="attendance-summary" id="attendanceSummaryNew" style="display: none;">
-                <div class="summary-card">
-                    <div class="summary-card-label">Total Records</div>
-                    <div class="summary-card-value" id="summaryTotalRecordsNew">0</div>
-                    <div class="summary-card-subtitle" id="summaryDateRangeNew"></div>
-                </div>
-                <div class="summary-card">
-                    <div class="summary-card-label">Total Hours</div>
-                    <div class="summary-card-value" id="summaryTotalHoursNew">0h</div>
-                </div>
-                <div class="summary-card">
-                    <div class="summary-card-label">Unique Students</div>
-                    <div class="summary-card-value" id="summaryActiveStudentsNew">0</div>
-                </div>
-                <div class="summary-card">
-                    <div class="summary-card-label">Average Hours</div>
-                    <div class="summary-card-value" id="summaryAverageHoursNew">0h</div>
-                </div>
-            </div>
+                <!-- Content -->
+                <main class="unified-content">
+                    <div class="page-header">
+                        <div class="page-header-top">
+                            <div class="page-title">
+                                <h2>Attendance Records</h2>
+                                <p>View and manage student attendance history</p>
+                            </div>
+                        </div>
 
-            <div class="clean-table-container">
-                <div class="table-header-section">
-                    <h3>📋 Attendance Records</h3>
-                </div>
-                <table class="clean-table">
-                    <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Student Name</th>
-                        <th>ID Badge</th>
-                        <th>School</th>
-                        <th>Time In</th>
-                        <th>Time Out</th>
-                        <th>Total Hours</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                    </thead>
-                    <tbody id="attendanceBodyNew">
-                    <tr>
-                        <td colspan="9" class="empty-state-modern">
-                            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                                <line x1="16" y1="2" x2="16" y2="6"></line>
-                                <line x1="8" y1="2" x2="8" y2="6"></line>
-                                <line x1="3" y1="10" x2="21" y2="10"></line>
-                            </svg>
-                            <h3>📅 Select a date range</h3>
-                            <p>Choose a date range above to view attendance records</p>
-                        </td>
-                    </tr>
-                    </tbody>
-                </table>
+                        <div class="compact-controls">
+                            <div class="compact-control">
+                                <label>Custom Date Range</label>
+                                <input type="date" id="customStartDate" placeholder="Start">
+                            </div>
+                            <div class="compact-control">
+                                <label>&nbsp;</label>
+                                <input type="date" id="customEndDate" placeholder="End">
+                            </div>
+                            <div class="compact-control">
+                                <label>Filter Status</label>
+                                <select id="attendanceStatusFilterNew" onchange="applyAttendanceFiltersNew()">
+                                    <option value="all">All Status</option>
+                                    <option value="TIMED_IN">Currently Timed In</option>
+                                    <option value="TIMED_OUT">Timed Out</option>
+                                    <option value="AUTO_TIMED_OUT">Auto Timed Out</option>
+                                    <option value="ADMIN_CORRECTED">Admin Corrected</option>
+                                </select>
+                            </div>
+                            <div class="compact-control">
+                                <label>&nbsp;</label>
+                                <button class="btn btn-primary" onclick="applyCustomDateRange()" style="width: 100%; height: 46px;">Apply Range</button>
+                            </div>
+                        </div>
+
+                        <div class="search-bar-container">
+                            <div class="search-bar-wrapper">
+                                <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <path d="m21 21-4.35-4.35"></path>
+                                </svg>
+                                <input type="text" class="search-bar" id="attendanceSearchNew" placeholder="Search by name, ID badge, or school..." onkeyup="applyAttendanceFiltersNew()">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="clean-table-container">
+                        <table class="clean-table">
+                            <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Student Name</th>
+                                <th>ID Badge</th>
+                                <th>School</th>
+                                <th>Time In</th>
+                                <th>Time Out</th>
+                                <th>Total Hours</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                            </thead>
+                            <tbody id="attendanceBodyNew">
+                            <tr>
+                                <td colspan="9" class="empty-state-modern">
+                                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                                    </svg>
+                                    <h3>📅 Select a date range</h3>
+                                    <p>Choose a date range from the sidebar to view attendance records</p>
+                                </td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </main>
             </div>
         </div>
 
         <!-- Corrections Tab -->
         <div id="corrections" class="tab-content">
-            <div class="card">
-                <div class="card-header">
-                    <h3>Time Corrections</h3>
-                    <button class="btn btn-primary" onclick="loadIncompleteRecords()">Refresh</button>
-                </div>
-                <div class="alert alert-info">
-                    <strong>Time Correction System:</strong> Use this section to correct attendance records that need admin attention.
-                </div>
-                <div id="correctionsList">
-                    <div class="loading-state">Loading records that need correction...</div>
-                </div>
+            <div class="unified-layout">
+                <!-- Sidebar -->
+                <aside class="unified-sidebar">
+                    <div class="sidebar-section">
+                        <h3>📊 Overview</h3>
+                        <div class="sidebar-stats">
+                            <div class="sidebar-stat-item" style="border-left: 4px solid var(--error-color);">
+                                <span class="sidebar-stat-label">🚨 Critical (12h+)</span>
+                                <span class="sidebar-stat-value" id="sidebarCriticalCorrections">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Total Pending</span>
+                                <span class="sidebar-stat-value" id="sidebarPendingCorrections">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">This Month</span>
+                                <span class="sidebar-stat-value" id="sidebarMonthCorrections">0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <h3>ℹ️ Information</h3>
+                        <div style="font-size: 0.85rem; line-height: 1.6; color: var(--text-secondary);">
+                            <p><strong>Correction Types:</strong></p>
+                            <ul style="margin: 0.5rem 0 0 1.25rem;">
+                                <li><strong>🚨 Critical:</strong> 12+ hours worked</li>
+                                <li><strong>⚠️ Auto Timed Out:</strong> System timeout</li>
+                                <li><strong>ℹ️ Incomplete:</strong> Missing data</li>
+                            </ul>
+                            <p style="margin-top: 0.75rem;"><small>All corrections are logged for audit purposes</small></p>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <h3>🔧 Actions</h3>
+                        <div class="quick-actions">
+                            <button class="quick-action-btn" onclick="loadIncompleteRecords()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <polyline points="1 20 1 14 7 14"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                                </svg>
+                                Refresh List
+                            </button>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Content -->
+                <main class="unified-content">
+                    <div class="page-header">
+                        <div class="page-header-top">
+                            <div class="page-title">
+                                <h2>Time Corrections</h2>
+                                <p>Review and correct attendance records that need admin attention</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <strong>⏰ Time Correction System:</strong> Records listed here require manual review. Common reasons include: forgot to time out, system errors, or incomplete data.
+                    </div>
+
+                    <div id="correctionsList">
+                        <div class="loading-state">Loading records that need correction...</div>
+                    </div>
+                </main>
             </div>
         </div>
 
         <!-- Schedules Tab -->
         <div id="schedules" class="tab-content">
-            <div class="card">
-                <div class="card-header">
-                    <h3>Schedule Overview</h3>
-                    <button class="btn btn-primary" onclick="loadScheduleOverview()">Refresh</button>
-                </div>
-                <div id="scheduleOverviewContent">
-                    <div class="loading-state">Loading schedule overview...</div>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">
-                    <h3>Bulk Schedule Management</h3>
-                    <button class="btn btn-info" onclick="loadStudentsForScheduling()">Load Students</button>
-                </div>
-
-                <div id="studentSelectionArea" class="d-none" style="margin-bottom: 2rem;">
-                    <div class="card-header" style="background: var(--bg-secondary); padding: 1rem; border-radius: var(--border-radius-lg); margin-bottom: 1rem;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <h4 style="margin: 0;">Select Students for Schedule</h4>
-                            <div style="display: flex; gap: 0.5rem;">
-                                <button class="btn btn-sm btn-secondary" onclick="selectAllStudents()">Select All</button>
-                                <button class="btn btn-sm btn-secondary" onclick="deselectAllStudents()">Deselect All</button>
-                                <span class="badge" style="background: var(--primary-color); color: white; padding: 0.5rem 1rem; border-radius: 20px;">
-                                    <span id="selectedCount">0</span> Selected
-                                </span>
+            <div class="unified-layout">
+                <!-- Sidebar -->
+                <aside class="unified-sidebar">
+                    <div class="sidebar-section">
+                        <h3>📊 Schedule Stats</h3>
+                        <div class="sidebar-stats">
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">With Schedule</span>
+                                <span class="sidebar-stat-value" id="sidebarWithSchedule">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Without</span>
+                                <span class="sidebar-stat-value" id="sidebarWithoutSchedule">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Late Today</span>
+                                <span class="sidebar-stat-value" id="sidebarLateToday">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Compliance</span>
+                                <span class="sidebar-stat-value" id="sidebarCompliance">0%</span>
                             </div>
                         </div>
                     </div>
 
-                    <div class="table-container" style="max-height: 400px;">
-                        <table class="data-table" id="schedulingStudentsTable">
-                            <thead>
-                            <tr>
-                                <th style="width: 50px;">
-                                    <input type="checkbox" id="selectAllCheckbox" onchange="toggleAllStudents(this)">
-                                </th>
-                                <th>ID Badge</th>
-                                <th>Full Name</th>
-                                <th>School</th>
-                                <th>Status</th>
-                                <th>Current Schedule</th>
-                            </tr>
-                            </thead>
-                            <tbody id="schedulingStudentsBody">
-                            <tr><td colspan="6" class="text-center">Click "Load Students" to begin</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <form id="bulkScheduleForm" onsubmit="submitBulkSchedule(event)">
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="bulkStartTime">Start Time:</label>
-                            <input type="time" id="bulkStartTime" value="10:00" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="bulkEndTime">End Time:</label>
-                            <input type="time" id="bulkEndTime" value="19:00" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="bulkGracePeriod">Grace Period (minutes):</label>
-                            <input type="number" id="bulkGracePeriod" min="0" max="30" value="5" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="bulkScheduleActive">Schedule Status:</label>
-                            <select id="bulkScheduleActive" required>
-                                <option value="true">Active</option>
-                                <option value="false">Inactive</option>
-                            </select>
+                    <div class="sidebar-section">
+                        <h3>🔧 Quick Actions</h3>
+                        <div class="quick-actions">
+                            <button class="quick-action-btn" onclick="loadScheduleOverview()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <polyline points="1 20 1 14 7 14"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                                </svg>
+                                Refresh Overview
+                            </button>
+                            <button class="quick-action-btn" onclick="loadStudentsForScheduling()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                    <circle cx="9" cy="7" r="4"></circle>
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                </svg>
+                                Load Students Without Schedule
+                            </button>
+                            <button class="quick-action-btn" onclick="loadLateArrivals()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                </svg>
+                                View Late Arrivals
+                            </button>
                         </div>
                     </div>
 
-                    <div class="alert alert-info" id="scheduleSelectionWarning" style="display: none;">
-                        <strong>⚠️ No students selected!</strong> Please select at least one student from the table above.
+                    <div class="sidebar-section">
+                        <h3>ℹ️ Information</h3>
+                        <div style="font-size: 0.85rem; line-height: 1.6; color: var(--text-secondary);">
+                            <p><strong>Schedule Setup:</strong></p>
+                            <ul style="margin: 0.5rem 0 0 1.25rem;">
+                                <li>Set work hours for students</li>
+                                <li>Track late arrivals</li>
+                                <li>Set grace periods</li>
+                                <li>Bulk assign schedules</li>
+                            </ul>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Content -->
+                <main class="unified-content">
+                    <div class="page-header">
+                        <div class="page-header-top">
+                            <div class="page-title">
+                                <h2>Schedule Management</h2>
+                                <p>Configure work schedules and track attendance patterns</p>
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="action-buttons">
-                        <button type="submit" class="btn btn-warning" id="applyScheduleBtn" disabled>
-                            Apply Schedule to Selected Students
-                        </button>
-                        <button type="button" class="btn btn-secondary" onclick="clearBulkScheduleForm()">Clear</button>
+                    <!-- Schedule Overview Card -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>📈 Schedule Overview</h3>
+                            <button class="btn btn-primary" onclick="loadScheduleOverview()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"></path>
+                                </svg>
+                                Refresh
+                            </button>
+                        </div>
+                        <div id="scheduleOverviewContent">
+                            <div class="loading-state">Loading schedule overview...</div>
+                        </div>
                     </div>
-                </form>
-            </div>
 
-            <div class="card">
-                <div class="card-header">
-                    <h3>Today's Late Arrivals</h3>
-                    <button class="btn btn-info" onclick="loadLateArrivals()">Refresh</button>
-                </div>
-                <div class="table-container">
-                    <table class="data-table">
-                        <thead>
-                        <tr>
-                            <th>Student Name</th>
-                            <th>ID Badge</th>
-                            <th>Scheduled Time</th>
-                            <th>Actual Time In</th>
-                            <th>Minutes Late</th>
-                            <th>Actions</th>
-                        </tr>
-                        </thead>
-                        <tbody id="lateArrivalsBody">
-                        <tr><td colspan="6" class="loading-state">Loading...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
+                    <!-- Bulk Schedule Management Card -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>📋 Bulk Schedule Assignment</h3>
+                            <button class="btn btn-info" onclick="loadStudentsForScheduling()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"></path>
+                                </svg>
+                                Load Students Without Schedule
+                            </button>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <strong>💡 Tip:</strong> Click "Load Students Without Schedule" to see all students who don't have a schedule assigned yet. You can then select multiple students and assign schedules in bulk.
+                        </div>
+
+                        <!-- Student Selection Area -->
+                        <div id="studentSelectionArea" class="d-none" style="margin-top: 1.5rem;">
+                            <div style="background: var(--bg-secondary); padding: 1.25rem; border-radius: var(--border-radius-lg); margin-bottom: 1rem; border: 2px solid var(--border-color);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                                    <div>
+                                        <h4 style="margin: 0 0 0.25rem 0; color: var(--text-primary);">
+                                            👥 Select Students for Schedule
+                                        </h4>
+                                        <p style="margin: 0; font-size: 0.875rem; color: var(--text-muted);">
+                                            Choose students who need schedule assignments
+                                        </p>
+                                    </div>
+                                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                        <button class="btn btn-sm btn-secondary" onclick="selectAllStudents()">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <polyline points="20 6 9 17 4 12"></polyline>
+                                            </svg>
+                                            Select All
+                                        </button>
+                                        <button class="btn btn-sm btn-secondary" onclick="deselectAllStudents()">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                                            </svg>
+                                            Deselect All
+                                        </button>
+                                        <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); color: white; padding: 0.5rem 1.25rem; border-radius: 20px; font-weight: 600; font-size: 0.875rem; box-shadow: var(--shadow-sm);">
+                                            <span id="selectedCount">0</span> Selected
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Students Without Schedule Table -->
+                            <div class="clean-table-container" style="margin-bottom: 1.5rem;">
+                                <div class="table-header-section">
+                                    <h3>📝 Students Without Assigned Schedules</h3>
+                                </div>
+                                <div class="table-container" style="max-height: 450px;">
+                                    <table class="clean-table">
+                                        <thead>
+                                        <tr>
+                                            <th style="width: 60px; text-align: center;">
+                                                <input type="checkbox" id="selectAllCheckbox" onchange="toggleAllStudents(this)" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary-color);">
+                                            </th>
+                                            <th>ID Badge</th>
+                                            <th>Full Name</th>
+                                            <th>School</th>
+                                            <th>Status</th>
+                                            <th>Current Schedule</th>
+                                        </tr>
+                                        </thead>
+                                        <tbody id="schedulingStudentsBody">
+                                        <tr>
+                                            <td colspan="6" class="empty-state-modern">
+                                                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                                    <circle cx="9" cy="7" r="4"></circle>
+                                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                                </svg>
+                                                <h3>Click "Load Students Without Schedule" to begin</h3>
+                                                <p>Students who need schedule assignments will appear here</p>
+                                            </td>
+                                        </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Schedule Assignment Form -->
+                            <form id="bulkScheduleForm" onsubmit="submitBulkSchedule(event)">
+                                <div class="form-section">
+                                    <h4>⏰ Schedule Details</h4>
+                                    <div class="form-grid">
+                                        <div class="form-group">
+                                            <label for="bulkStartTime">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                                                    <circle cx="12" cy="12" r="10"></circle>
+                                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                                </svg>
+                                                Start Time:
+                                            </label>
+                                            <input type="time" id="bulkStartTime" value="10:00" required>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="bulkEndTime">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                                                    <circle cx="12" cy="12" r="10"></circle>
+                                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                                </svg>
+                                                End Time:
+                                            </label>
+                                            <input type="time" id="bulkEndTime" value="19:00" required>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="bulkGracePeriod">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                                                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                                                </svg>
+                                                Grace Period (minutes):
+                                            </label>
+                                            <input type="number" id="bulkGracePeriod" min="0" max="30" value="5" required>
+                                            <small>Late arrival tolerance (typically 5-15 minutes)</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="bulkScheduleActive">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                                </svg>
+                                                Schedule Status:
+                                            </label>
+                                            <select id="bulkScheduleActive" required>
+                                                <option value="true">✅ Active - Enable schedule tracking</option>
+                                                <option value="false">⏸️ Inactive - Save but don't track yet</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="alert alert-warning" id="scheduleSelectionWarning" style="display: none;">
+                                    <strong>⚠️ No students selected!</strong> Please select at least one student from the table above by checking the boxes.
+                                </div>
+
+                                <div class="modal-actions" style="margin-top: 1.5rem;">
+                                    <button type="button" class="btn btn-secondary" onclick="clearBulkScheduleForm()">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                                        </svg>
+                                        Clear Form
+                                    </button>
+                                    <button type="submit" class="btn btn-warning" id="applyScheduleBtn" disabled>
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="20 6 9 17 4 12"></polyline>
+                                        </svg>
+                                        Apply Schedule to Selected Students
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Late Arrivals Card -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>⏰ Today's Late Arrivals</h3>
+                            <button class="btn btn-info" onclick="loadLateArrivals()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"></path>
+                                </svg>
+                                Refresh
+                            </button>
+                        </div>
+                        <div class="clean-table-container">
+                            <table class="clean-table">
+                                <thead>
+                                <tr>
+                                    <th>Student Name</th>
+                                    <th>ID Badge</th>
+                                    <th>Scheduled Time</th>
+                                    <th>Actual Time In</th>
+                                    <th>Minutes Late</th>
+                                    <th>Actions</th>
+                                </tr>
+                                </thead>
+                                <tbody id="lateArrivalsBody">
+                                <tr><td colspan="6" class="loading-state">Loading...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </main>
             </div>
         </div>
 
         <!-- Live Tasks Tab -->
         <div id="liveTasks" class="tab-content">
-            <div class="card">
-                <div class="card-header">
-                    <h3>📊 Real-Time Task Monitoring</h3>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <button class="btn btn-success" id="autoRefreshToggle" onclick="toggleAutoRefresh()">
-                            🔄 Auto-Refresh: ON
-                        </button>
-                        <button class="btn btn-primary" onclick="loadLiveTaskUpdates()">
-                            🔃 Refresh Now
-                        </button>
-                    </div>
-                </div>
-
-                <div class="live-task-stats">
-                    <div class="live-stat-card stat-total">
-                        <div class="live-stat-label">👥 Students</div>
-                        <div class="live-stat-value" id="statTotalActive">0</div>
-                    </div>
-                    <div class="live-stat-card stat-very-active">
-                        <div class="live-stat-label">🟢 Very Active</div>
-                        <div class="live-stat-value" id="statVeryActive">0</div>
-                    </div>
-                    <div class="live-stat-card stat-active">
-                        <div class="live-stat-label">🟡 Active</div>
-                        <div class="live-stat-value" id="statActive">0</div>
-                    </div>
-                    <div class="live-stat-card stat-idle">
-                        <div class="live-stat-label">🔴 Idle</div>
-                        <div class="live-stat-value" id="statIdle">0</div>
-                    </div>
-                    <div class="live-stat-card stat-tasks">
-                        <div class="live-stat-label">📝 Total Tasks</div>
-                        <div class="live-stat-value" id="statTotalTasks">0</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="live-task-controls">
-                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                    <div class="control-group">
-                        <label for="taskSortSelect">📊 Sort By:</label>
-                        <select id="taskSortSelect" onchange="displayLiveTaskCards()">
-                            <option value="recent">Most Recent Activity</option>
-                            <option value="tasks">Most Tasks</option>
-                            <option value="name">Name (A-Z)</option>
-                            <option value="time">Longest Working Time</option>
-                        </select>
+            <div class="unified-layout">
+                <!-- Sidebar -->
+                <aside class="unified-sidebar">
+                    <div class="sidebar-section">
+                        <h3>📊 Activity Stats</h3>
+                        <div class="sidebar-stats">
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Active</span>
+                                <span class="sidebar-stat-value" id="statTotalActive">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">🟢 Very Active</span>
+                                <span class="sidebar-stat-value" id="statVeryActive">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">🟡 Active</span>
+                                <span class="sidebar-stat-value" id="statActive">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">🔴 Idle</span>
+                                <span class="sidebar-stat-value" id="statIdle">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Total Tasks</span>
+                                <span class="sidebar-stat-value" id="statTotalTasks">0</span>
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="control-group">
-                        <label for="productivityFilter">🎯 Filter:</label>
-                        <select id="productivityFilter" onchange="filterLiveTasks()">
-                            <option value="all">All Students</option>
-                            <option value="very-active">Very Active Only</option>
-                            <option value="active">Active Only</option>
-                            <option value="idle">Idle Only</option>
-                            <option value="new">Just Started</option>
-                        </select>
+                    <div class="sidebar-section">
+                        <h3>🔍 Filters</h3>
+                        <div class="filter-chips">
+                            <button class="filter-chip active" onclick="document.getElementById('productivityFilter').value='all'; filterLiveTasks();" data-filter="all">
+                                <span class="filter-chip-label">All Students</span>
+                            </button>
+                            <button class="filter-chip" onclick="document.getElementById('productivityFilter').value='very-active'; filterLiveTasks();" data-filter="very-active">
+                                <span class="filter-chip-label">🟢 Very Active</span>
+                            </button>
+                            <button class="filter-chip" onclick="document.getElementById('productivityFilter').value='active'; filterLiveTasks();" data-filter="active">
+                                <span class="filter-chip-label">🟡 Active</span>
+                            </button>
+                            <button class="filter-chip" onclick="document.getElementById('productivityFilter').value='idle'; filterLiveTasks();" data-filter="idle">
+                                <span class="filter-chip-label">🔴 Idle</span>
+                            </button>
+                        </div>
                     </div>
-                </div>
 
-                <div class="last-refresh-info">
-                    🕐 Last updated: <strong id="lastRefreshTime">Never</strong>
-                </div>
-            </div>
+                    <div class="sidebar-section">
+                        <h3>🔧 Actions</h3>
+                        <div class="quick-actions">
+                            <button class="quick-action-btn" id="autoRefreshToggle" onclick="toggleAutoRefresh()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <polyline points="1 20 1 14 7 14"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                                </svg>
+                                Auto-Refresh: ON
+                            </button>
+                            <button class="quick-action-btn" onclick="loadLiveTaskUpdates()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"></path>
+                                </svg>
+                                Refresh Now
+                            </button>
+                        </div>
+                    </div>
 
-            <div class="task-cards-grid" id="liveTaskCardsContainer">
-                <div class="loading-state" style="grid-column: 1 / -1;">
-                    <h3>Loading live task updates...</h3>
-                </div>
+                    <div class="sidebar-section">
+                        <h3>🕐 Last Updated</h3>
+                        <div style="text-align: center; padding: 1rem; background: var(--bg-secondary); border-radius: var(--border-radius-lg);">
+                            <div style="font-size: 1.25rem; font-weight: 600; color: var(--text-primary);" id="lastRefreshTime">Never</div>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Content -->
+                <main class="unified-content">
+                    <div class="page-header">
+                        <div class="page-header-top">
+                            <div class="page-title">
+                                <h2>📋 Real-Time Task Monitoring</h2>
+                                <p>Track student productivity and task completion in real-time</p>
+                            </div>
+                        </div>
+
+                        <div class="compact-controls">
+                            <div class="compact-control">
+                                <label>Sort By</label>
+                                <select id="taskSortSelect" onchange="displayLiveTaskCards()">
+                                    <option value="recent">Most Recent Activity</option>
+                                    <option value="tasks">Most Tasks</option>
+                                    <option value="name">Name (A-Z)</option>
+                                    <option value="time">Longest Working Time</option>
+                                </select>
+                            </div>
+                            <div class="compact-control">
+                                <label>Filter Productivity</label>
+                                <select id="productivityFilter" onchange="filterLiveTasks()">
+                                    <option value="all">All Students</option>
+                                    <option value="very-active">Very Active Only</option>
+                                    <option value="active">Active Only</option>
+                                    <option value="idle">Idle Only</option>
+                                    <option value="new">Just Started</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="task-cards-grid" id="liveTaskCardsContainer">
+                        <div class="loading-state" style="grid-column: 1 / -1;">
+                            <h3>Loading live task updates...</h3>
+                        </div>
+                    </div>
+                </main>
             </div>
         </div>
 
         <!-- Reports Tab -->
         <div id="reports" class="tab-content">
-            <div class="card">
-                <div class="card-header">
-                    <h3>Generate Reports</h3>
-                </div>
-                <div class="form-grid">
-                    <div>
-                        <h4>All Students Report</h4>
-                        <div class="form-group">
-                            <label for="reportStartDate">Start Date:</label>
-                            <input type="date" id="reportStartDate">
-                        </div>
-                        <div class="form-group">
-                            <label for="reportEndDate">End Date:</label>
-                            <input type="date" id="reportEndDate">
-                        </div>
-                        <div class="action-buttons">
-                            <button class="btn btn-success" onclick="downloadCSVReport()">Download CSV</button>
-                            <button class="btn btn-info" onclick="downloadExcelReport()">Download Excel</button>
-                        </div>
-                    </div>
-                    <div>
-                        <h4>Individual Student Report</h4>
-                        <div class="form-group">
-                            <label for="reportStudentId">Student ID:</label>
-                            <input type="text" id="reportStudentId" placeholder="4-digit ID" maxlength="4">
-                        </div>
-                        <div class="form-group">
-                            <label for="studentReportStart">Start Date:</label>
-                            <input type="date" id="studentReportStart">
-                        </div>
-                        <div class="form-group">
-                            <label for="studentReportEnd">End Date:</label>
-                            <input type="date" id="studentReportEnd">
-                        </div>
-                        <div class="action-buttons">
-                            <button class="btn btn-primary" onclick="downloadStudentReport()">Download Student CSV</button>
+            <div class="unified-layout">
+                <!-- Sidebar -->
+                <aside class="unified-sidebar">
+                    <div class="sidebar-section">
+                        <h3>📊 Quick Stats</h3>
+                        <div class="sidebar-stats">
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Total Students</span>
+                                <span class="sidebar-stat-value" id="reportTotalStudents">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Active Students</span>
+                                <span class="sidebar-stat-value" id="reportActiveStudents">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Total Records</span>
+                                <span class="sidebar-stat-value" id="reportTotalRecords">0</span>
+                            </div>
                         </div>
                     </div>
-                </div>
-                <div class="card">
-                    <div class="card-header">
-                        <h3>Quick Reports</h3>
+
+                    <div class="sidebar-section">
+                        <h3>🚀 Quick Reports</h3>
+                        <div class="quick-actions">
+                            <button class="quick-action-btn" onclick="generateTodayReport()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                                </svg>
+                                Today's Attendance
+                            </button>
+                            <button class="quick-action-btn" onclick="generateWeekReport()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                </svg>
+                                This Week
+                            </button>
+                            <button class="quick-action-btn" onclick="generateMonthReport()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                </svg>
+                                This Month
+                            </button>
+                            <button class="quick-action-btn" onclick="downloadStudentsCSV()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                    <circle cx="9" cy="7" r="4"></circle>
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                </svg>
+                                All Students CSV
+                            </button>
+                        </div>
                     </div>
-                    <div class="action-buttons">
-                        <button class="btn btn-info" onclick="generateTodayReport()">Today's Report</button>
-                        <button class="btn btn-info" onclick="generateWeekReport()">This Week</button>
-                        <button class="btn btn-info" onclick="generateMonthReport()">This Month</button>
+
+                    <div class="sidebar-section">
+                        <h3>ℹ️ Information</h3>
+                        <div style="font-size: 0.85rem; line-height: 1.6; color: var(--text-secondary);">
+                            <p><strong>Report Types:</strong></p>
+                            <ul style="margin: 0.5rem 0 0 1.25rem;">
+                                <li><strong>Student Reports:</strong> Student profiles & progress</li>
+                                <li><strong>Attendance Reports:</strong> Time records & history</li>
+                                <li><strong>Individual Reports:</strong> Single student data</li>
+                            </ul>
+                        </div>
                     </div>
-                </div>
+                </aside>
+
+                <!-- Content -->
+                <main class="unified-content">
+                    <div class="page-header">
+                        <div class="page-header-top">
+                            <div class="page-title">
+                                <h2>📈 Reports & Data Export</h2>
+                                <p>Generate and download various reports in CSV or Excel format</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Student Reports Card -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>👥 Student Reports</h3>
+                            <button class="btn btn-info" onclick="updateReportStats()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"></path>
+                                </svg>
+                                Refresh Stats
+                            </button>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <strong>💡 Student Reports Include:</strong> ID Badge, Name, School, Status, Required Hours, Total Hours, Progress, Schedule Information
+                        </div>
+
+                        <div class="report-options-grid">
+                            <!-- All Students Export -->
+                            <div class="report-option-card">
+                                <div class="report-option-header">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                        <circle cx="9" cy="7" r="4"></circle>
+                                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                    </svg>
+                                    <h4>All Students</h4>
+                                </div>
+                                <p>Export complete student database with all information including progress and schedules</p>
+                                <button class="btn btn-success btn-block" onclick="downloadStudentsCSV()">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                                    </svg>
+                                    Download Students CSV
+                                </button>
+                            </div>
+
+                            <!-- Active Students Only -->
+                            <div class="report-option-card">
+                                <div class="report-option-header">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                                    </svg>
+                                    <h4>Active Students Only</h4>
+                                </div>
+                                <p>Export only active students (excludes completed and inactive)</p>
+                                <button class="btn btn-success btn-block" onclick="downloadActiveStudentsCSV()">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                                    </svg>
+                                    Download Active Students
+                                </button>
+                            </div>
+
+                            <!-- Students with Progress -->
+                            <div class="report-option-card">
+                                <div class="report-option-header">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="12" y1="1" x2="12" y2="23"></line>
+                                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                                    </svg>
+                                    <h4>Progress Report</h4>
+                                </div>
+                                <p>Detailed progress report with completion percentages and hours remaining</p>
+                                <button class="btn btn-success btn-block" onclick="downloadProgressReport()">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                                    </svg>
+                                    Download Progress Report
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Attendance Reports Card -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>📅 Attendance Reports</h3>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <strong>💡 Attendance Reports Include:</strong> Date, Student Name, ID Badge, School, Time In/Out, Total Hours, Status
+                        </div>
+
+                        <div class="form-section">
+                            <h4>📆 Date Range Selection</h4>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="reportStartDate">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                                        </svg>
+                                        Start Date:
+                                    </label>
+                                    <input type="date" id="reportStartDate" class="form-control">
+                                </div>
+                                <div class="form-group">
+                                    <label for="reportEndDate">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                                        </svg>
+                                        End Date:
+                                    </label>
+                                    <input type="date" id="reportEndDate" class="form-control">
+                                </div>
+                            </div>
+                            <div class="action-buttons">
+                                <button class="btn btn-success" onclick="downloadCSVReport()">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                                    </svg>
+                                    Download CSV
+                                </button>
+                                <button class="btn btn-info" onclick="downloadExcelReport()">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                                    </svg>
+                                    Download Excel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Individual Student Report Card -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>👤 Individual Student Report</h3>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <strong>💡 Individual Reports Include:</strong> Complete attendance history and detailed time records for a specific student
+                        </div>
+
+                        <div class="form-section">
+                            <h4>🔍 Student Selection</h4>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="studentReportStart">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                        </svg>
+                                        Start Date:
+                                    </label>
+                                    <input type="date" id="studentReportStart">
+                                </div>
+                                <div class="form-group">
+                                    <label for="studentReportEnd">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                        </svg>
+                                        End Date:
+                                    </label>
+                                    <input type="date" id="studentReportEnd">
+                                </div>
+                                <div class="form-group">
+                                    <label for="reportStudentId">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                            <circle cx="12" cy="7" r="4"></circle>
+                                        </svg>
+                                        Student ID Badge:
+                                    </label>
+                                    <input type="text" id="reportStudentId" placeholder="Enter 4-digit ID" maxlength="4">
+                                </div>
+                            </div>
+                            <div class="action-buttons">
+                                <button class="btn btn-primary" onclick="downloadStudentReport()">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                                    </svg>
+                                    Download Student Report
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </main>
             </div>
         </div>
 
-        <!-- Add Settings Tab Content -->
+        <!-- Settings Tab -->
         <div id="settings" class="tab-content">
             <div class="card">
                 <div class="card-header">
@@ -640,7 +1183,7 @@
                     <div class="detail-grid">
                         <div class="detail-item">
                             <div class="detail-label">System Name</div>
-                            <div class="detail-value">TERA IT Attendance System</div>
+                            <div class="detail-value">TERA OJT Attendance System</div>
                         </div>
                         <div class="detail-item">
                             <div class="detail-label">Version</div>
@@ -712,35 +1255,66 @@
         <h3>Notifications</h3>
         <button class="modal-close" onclick="toggleNotificationPanel()">×</button>
     </div>
-    <div class="notification-content" id="notificationContent">
-        <div class="loading-state">Loading notifications...</div>
+
+    <!-- Stats Bar -->
+    <div class="notification-stats">
+        <div class="notification-stat-item">
+            <div class="notification-stat-value" id="notifTotalCount">0</div>
+            <div class="notification-stat-label">Total</div>
+        </div>
+        <div class="notification-stat-item">
+            <div class="notification-stat-value" id="notifUnreadCount">0</div>
+            <div class="notification-stat-label">Unread</div>
+        </div>
     </div>
-    <div class="notification-footer" style="display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem; border-top: 2px solid var(--border-color);">
-        <button class="btn btn-secondary" onclick="markAllNotificationsRead()">
+
+    <!-- Filter Tabs -->
+    <div class="notification-filters">
+        <button class="notification-filter-tab active" onclick="filterNotifications('all')" data-filter="all">
+            All
+            <span class="notification-filter-count" id="filterAllCount">0</span>
+        </button>
+        <button class="notification-filter-tab" onclick="filterNotifications('unread')" data-filter="unread">
+            Unread
+            <span class="notification-filter-count" id="filterUnreadCount">0</span>
+        </button>
+        <button class="notification-filter-tab" onclick="filterNotifications('read')" data-filter="read">
+            Read
+            <span class="notification-filter-count" id="filterReadCount">0</span>
+        </button>
+    </div>
+
+    <div class="notification-content" id="notificationContent">
+        <div class="notification-loading">
+            <div class="spinner"></div>
+            <p>Loading notifications...</p>
+        </div>
+    </div>
+
+    <div class="notification-footer">
+        <button class="btn btn-primary" onclick="markAllNotificationsRead()">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
             Mark All as Read
         </button>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
-            <button class="btn btn-sm btn-info" onclick="clearReadNotifications()">
+        <div class="notification-footer-actions">
+            <button class="btn btn-sm btn-secondary" onclick="clearReadNotifications()">
                 Clear Read
             </button>
-            <button class="btn btn-sm btn-info" onclick="cleanupOldNotifications()">
+            <button class="btn btn-sm btn-secondary" onclick="cleanupOldNotifications()">
                 Cleanup Old
             </button>
         </div>
 
-        <div class="danger-zone" style="margin-top: 0.5rem;">
-            <button class="btn btn-error" onclick="clearAllNotifications()">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-                Clear All Notifications
-            </button>
-        </div>
+        <button class="btn btn-error" onclick="clearAllNotifications()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            Clear All
+        </button>
     </div>
 </div>
 

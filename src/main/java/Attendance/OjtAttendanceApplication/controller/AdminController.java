@@ -1,8 +1,10 @@
 package Attendance.OjtAttendanceApplication.controller;
 
 import Attendance.OjtAttendanceApplication.dto.*;
+import Attendance.OjtAttendanceApplication.entity.AttendanceRecord;
 import Attendance.OjtAttendanceApplication.entity.Student;
 import Attendance.OjtAttendanceApplication.entity.TaskEntry;
+import Attendance.OjtAttendanceApplication.repository.AttendanceRecordRepository;
 import Attendance.OjtAttendanceApplication.repository.StudentRepository;
 import Attendance.OjtAttendanceApplication.service.AttendanceService;
 import Attendance.OjtAttendanceApplication.service.NotificationService;
@@ -38,6 +40,9 @@ public class AdminController {
 
     @Autowired
     private TaskService taskService;
+
+    @Autowired
+    private AttendanceRecordRepository attendanceRecordRepository;
 
 
 
@@ -687,6 +692,39 @@ public class AdminController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
         }
+    }
+
+    @GetMapping("/attendance/active-sessions")
+    public ResponseEntity<?> getActiveSessions() {
+        try {
+            List<AttendanceRecord> activeRecords = attendanceRecordRepository.findAllTimedInRecords();
+
+            List<AttendanceRecordDto> recordDtos = activeRecords.stream()
+                    .map(this::convertToDto)
+                    .collect(Collectors.toList());
+
+            return ResponseEntity.ok(recordDtos);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
+    }
+
+    private AttendanceRecordDto convertToDto(AttendanceRecord record) {
+        AttendanceRecordDto dto = new AttendanceRecordDto();
+        dto.setId(record.getId());
+        dto.setStudentName(record.getStudent().getFullName());
+        dto.setIdBadge(record.getStudent().getIdBadge());
+        dto.setAttendanceDate(record.getAttendanceDate());
+        dto.setTimeIn(record.getTimeIn());
+        dto.setTimeOut(record.getTimeOut());
+        dto.setTotalHours(record.getTotalHours());
+        dto.setRegularHours(record.getRegularHours());
+        dto.setOvertimeHours(record.getOvertimeHours());
+        dto.setUndertimeHours(record.getUndertimeHours());
+        dto.setTasksCompleted(record.getTasksCompleted());
+        dto.setStatus(record.getStatus().name());
+        dto.setBreakDeducted(record.getBreakDeducted());
+        return dto;
     }
 }
 

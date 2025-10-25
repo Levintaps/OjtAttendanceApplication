@@ -262,41 +262,59 @@ async function loadTabData(tabName) {
 // ==================== DASHBOARD FUNCTIONS ====================
 async function loadDashboard() {
     try {
-        const [studentsResponse, todayRecordsResponse] = await Promise.all([
+        const today = formatDate(new Date());
+
+        const [studentsResponse, todayRecordsResponse, activeSessionsResponse] = await Promise.all([
             fetch(`${API_BASE_URL}/students/all`),
-            // CHANGED: Use new calendar endpoint for dashboard
-            fetch(`${API_BASE_URL}/admin/attendance/records/calendar?date=${formatDate(new Date())}`)
+            fetch(`${API_BASE_URL}/attendance/records?date=${today}`),
+            fetch(`${API_BASE_URL}/admin/attendance/active-sessions`) // NEW: Get all active sessions
         ]);
 
+        // Load all students
         if (studentsResponse.ok) {
             const students = await studentsResponse.json();
             allStudents = students;
             document.getElementById('totalStudents').textContent = students.length;
         }
 
+        // Load today's records for display
+        let todayRecords = [];
         if (todayRecordsResponse.ok) {
-            const records = await todayRecordsResponse.json();
-            allAttendanceRecords = records;
-            activeStudentsData = records.filter(r => r.status === 'TIMED_IN');
-
-            const completedHours = records
-                .filter(r => r.status !== 'TIMED_IN')
-                .reduce((sum, r) => sum + (parseFloat(r.totalHours) || 0), 0);
-
-            document.getElementById('timedInStudents').textContent = activeStudentsData.length;
-            document.getElementById('todayRecords').textContent = records.length;
-
-            if (activeStudentsData.length > 0) {
-                const initialTotal = calculateRealtimeTotalHours();
-                document.getElementById('totalHoursToday').textContent = formatHoursMinutes(initialTotal);
-                startRealtimeUpdates();
-            } else {
-                stopRealtimeUpdates();
-                document.getElementById('totalHoursToday').textContent = formatHoursMinutes(completedHours);
-            }
-
-            displayDashboardRecords(records);
+            todayRecords = await todayRecordsResponse.json();
         }
+
+        // Load ALL currently active sessions (regardless of date)
+        let activeSessions = [];
+        if (activeSessionsResponse.ok) {
+            activeSessions = await activeSessionsResponse.json();
+        }
+
+        // Combine: Show today's completed records + all active sessions
+        const displayRecords = [...todayRecords.filter(r => r.status !== 'TIMED_IN'), ...activeSessions];
+        allAttendanceRecords = displayRecords;
+        activeStudentsData = activeSessions; // All currently timed-in students
+
+        // Calculate stats
+        const completedHours = todayRecords
+            .filter(r => r.status !== 'TIMED_IN')
+            .reduce((sum, r) => sum + (parseFloat(r.totalHours) || 0), 0);
+
+        // Update dashboard stats
+        document.getElementById('timedInStudents').textContent = activeStudentsData.length;
+        document.getElementById('todayRecords').textContent = todayRecords.length;
+
+        // Calculate and display total hours
+        if (activeStudentsData.length > 0) {
+            const initialTotal = calculateRealtimeTotalHours();
+            document.getElementById('totalHoursToday').textContent = formatHoursMinutes(initialTotal);
+            startRealtimeUpdates();
+        } else {
+            stopRealtimeUpdates();
+            document.getElementById('totalHoursToday').textContent = formatHoursMinutes(completedHours);
+        }
+
+        // Display the combined records
+        displayDashboardRecords(displayRecords);
 
         await loadWeeklyChart();
     } catch (error) {
@@ -497,16 +515,24 @@ async function displayStudentsTableNew(students) {
         return;
     }
 
-    let todayRecords = [];
+    // Fetch ALL currently active sessions (not just today's)
+    let activeSessionsMap = {};
     try {
-        const response = await fetch(`${API_BASE_URL}/attendance/records?date=${formatDate(new Date())}`);
-        if (response.ok) todayRecords = await response.json();
+        const response = await fetch(`${API_BASE_URL}/admin/attendance/active-sessions`);
+        if (response.ok) {
+            const activeSessions = await response.json();
+            // Create a map of idBadge -> record for quick lookup
+            activeSessions.forEach(record => {
+                activeSessionsMap[record.idBadge] = record;
+            });
+        }
     } catch (error) {
-        console.error('Failed to load today\'s records:', error);
+        console.error('Failed to load active sessions:', error);
     }
 
     tbody.innerHTML = students.map(student => {
-        const studentRecord = todayRecords.find(record => record.idBadge === student.idBadge);
+        // Check if student has an active session
+        const studentRecord = activeSessionsMap[student.idBadge];
         const totalHours = parseFloat(student.totalAccumulatedHours || 0);
         const requiredHours = student.requiredHours ? parseFloat(student.requiredHours) : null;
         const hasRequiredHours = requiredHours !== null && requiredHours > 0;
@@ -637,13 +663,37 @@ function toggleStudentActionsMenu(event, studentId) {
     const menu = document.getElementById(`student-menu-${studentId}`);
     const allMenus = document.querySelectorAll('.student-actions-menu');
 
+    // Close all other menus
     allMenus.forEach(m => {
         if (m.id !== `student-menu-${studentId}`) {
             m.classList.remove('show');
+            m.classList.remove('position-above');
         }
     });
 
-    menu.classList.toggle('show');
+    // Toggle current menu
+    const isOpening = !menu.classList.contains('show');
+
+    if (isOpening) {
+        menu.classList.add('show');
+
+        //Check if menu goes off-screen and adjust position
+        setTimeout(() => {
+            const menuRect = menu.getBoundingClientRect();
+            const windowHeight = window.innerHeight;
+            const spaceBelow = windowHeight - menuRect.bottom;
+
+            // If not enough space below (less than 20px), position above
+            if (spaceBelow < 20) {
+                menu.classList.add('position-above');
+            } else {
+                menu.classList.remove('position-above');
+            }
+        }, 10);
+    } else {
+        menu.classList.remove('show');
+        menu.classList.remove('position-above');
+    }
 }
 
 function closeAllMenus() {
@@ -1642,7 +1692,9 @@ async function loadAttendanceRecordsNew(startDate, endDate) {
 
 function displayAttendanceRecordsNew(records) {
     const tbody = document.getElementById('attendanceBodyNew');
-    const summaryDiv = document.getElementById('attendanceSummaryNew');
+
+    // Update sidebar stats
+    updateAttendanceSidebarStats(records);
 
     if (records.length === 0) {
         tbody.innerHTML = `
@@ -1658,20 +1710,8 @@ function displayAttendanceRecordsNew(records) {
                 </td>
             </tr>
         `;
-        summaryDiv.style.display = 'none';
         return;
     }
-
-    const totalHours = records.reduce((sum, r) => sum + (parseFloat(r.totalHours) || 0), 0);
-    const uniqueStudents = new Set(records.map(r => r.idBadge)).size;
-    const averageHours = totalHours / records.length;
-
-    document.getElementById('summaryTotalRecordsNew').textContent = records.length;
-    document.getElementById('summaryTotalHoursNew').textContent = formatHoursMinutes(totalHours);
-    document.getElementById('summaryActiveStudentsNew').textContent = uniqueStudents;
-    document.getElementById('summaryAverageHoursNew').textContent = formatHoursMinutes(averageHours);
-    document.getElementById('summaryDateRangeNew').textContent = currentAttendanceDateRange;
-    summaryDiv.style.display = 'grid';
 
     const studentSchoolMap = {};
     allStudents.forEach(student => {
@@ -1920,47 +1960,257 @@ function applyAttendanceTableFilters() {
 
 // ==================== TIME CORRECTIONS ====================
 async function loadIncompleteRecords() {
+    showLoading();
     try {
+        // Load ALL records that need correction (incomplete AND 12+ hours)
         const response = await fetch(`${API_BASE_URL}/admin/attendance/incomplete`);
+
         if (response.ok) {
             const records = await response.json();
             displayIncompleteRecords(records);
         } else {
-            showAlert('Failed to load incomplete records', 'error');
+            showAlert('Failed to load records requiring correction', 'error');
+            document.getElementById('correctionsList').innerHTML = `
+                <div class="empty-state-modern">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <h3>Failed to load records</h3>
+                    <p>Please try refreshing the page</p>
+                </div>
+            `;
         }
     } catch (error) {
         console.error('Failed to load incomplete records:', error);
-        showAlert('Failed to load incomplete records', 'error');
+        showAlert('Failed to load records requiring correction', 'error');
+    } finally {
+        hideLoading();
     }
 }
 
 function displayIncompleteRecords(records) {
     const container = document.getElementById('correctionsList');
 
+    // Update sidebar stats
+    updateCorrectionsSidebarStats(records);
+
     if (records.length === 0) {
         container.innerHTML = `
-            <div class="empty-state">
-                <h3>No records requiring correction</h3>
-                <p>All attendance records are complete</p>
+            <div class="empty-state-modern">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <h3>✅ All Clear!</h3>
+                <p>No records requiring correction at this time</p>
             </div>
         `;
         return;
     }
 
-    container.innerHTML = records.map(record => `
-        <div class="card" style="margin-bottom: 1rem;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
-                <div>
-                    <h4 style="color: var(--text-primary); margin-bottom: 0.5rem;">${record.studentName} (<span class="badge-number">${record.idBadge}</span>)</h4>
-                    <p><strong>Date:</strong> ${formatDate(record.attendanceDate)}</p>
-                    <p><strong>Time In:</strong> ${formatTime(record.timeIn)}</p>
-                    <p><strong>Current Status:</strong> <span class="status-badge status-${record.status?.toLowerCase().replace('_', '-')}">${record.status?.replace('_', ' ') || 'Unknown'}</span></p>
-                    <p><strong>Hours Worked:</strong> ${formatHoursMinutes(parseFloat(calculateElapsedHours(record.timeIn)))} (estimated)</p>
+    // Separate records by priority
+    const criticalRecords = [];
+    const autoTimedOut = [];
+    const incomplete = [];
+    const longSession = [];
+
+    records.forEach(r => {
+        const hours = parseFloat(calculateElapsedHours(r.timeIn));
+
+        if (r.status === 'TIMED_IN' && hours >= 12) {
+            criticalRecords.push(r);
+        } else if (r.status === 'AUTO_TIMED_OUT') {
+            autoTimedOut.push(r);
+        } else if (r.status === 'INCOMPLETE') {
+            incomplete.push(r);
+        } else if (r.status === 'TIMED_IN' && hours >= 10) {
+            // Show TIMED_IN records that are 10+ hours (but less than 12)
+            longSession.push(r);
+        }
+    });
+
+    let html = '';
+
+    // CRITICAL: 12+ Hours Worked
+    if (criticalRecords.length > 0) {
+        html += `
+            <div class="correction-section critical">
+                <div class="correction-section-header">
+                    <h4>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        🚨 CRITICAL: 12+ Hours Worked (${criticalRecords.length})
+                    </h4>
+                    <p>These students have been working for 12 hours or more and need immediate attention</p>
                 </div>
-                <button class="btn btn-warning" onclick="correctTime(${record.id})">Correct Time</button>
+                ${criticalRecords.map(record => createCorrectionCard(record, 'critical')).join('')}
             </div>
+        `;
+    }
+
+    // WARNING: Long Session (10-12 hours)
+    if (longSession.length > 0) {
+        html += `
+            <div class="correction-section warning">
+                <div class="correction-section-header">
+                    <h4>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                        ⚠️ Long Session: 10+ Hours (${longSession.length})
+                    </h4>
+                    <p>Students approaching 12 hours - may need review soon</p>
+                </div>
+                ${longSession.map(record => createCorrectionCard(record, 'warning')).join('')}
+            </div>
+        `;
+    }
+
+    // Auto Timed Out
+    if (autoTimedOut.length > 0) {
+        html += `
+            <div class="correction-section warning">
+                <div class="correction-section-header">
+                    <h4>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        ⚠️ Auto Timed Out (${autoTimedOut.length})
+                    </h4>
+                    <p>Students who were automatically timed out by the system</p>
+                </div>
+                ${autoTimedOut.map(record => createCorrectionCard(record, 'warning')).join('')}
+            </div>
+        `;
+    }
+
+    // Incomplete
+    if (incomplete.length > 0) {
+        html += `
+            <div class="correction-section info">
+                <div class="correction-section-header">
+                    <h4>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                        </svg>
+                        ℹ️ Incomplete Records (${incomplete.length})
+                    </h4>
+                    <p>Records with missing or incomplete data</p>
+                </div>
+                ${incomplete.map(record => createCorrectionCard(record, 'info')).join('')}
+            </div>
+        `;
+    }
+
+    container.innerHTML = html;
+}
+
+function createCorrectionCard(record, severity) {
+    const now = new Date();
+    const timeInDate = new Date(record.timeIn);
+    const hoursWorked = (now - timeInDate) / (1000 * 60 * 60);
+    const isOvertime = hoursWorked >= 12;
+
+    // Determine the issue type and message
+    let issueType = '';
+    let issueIcon = '';
+    let issueClass = '';
+
+    if (isOvertime && record.status === 'TIMED_IN') {
+        issueType = 'CRITICAL: Working 12+ Hours';
+        issueIcon = '🚨';
+        issueClass = 'critical';
+    } else if (record.status === 'AUTO_TIMED_OUT') {
+        issueType = 'Auto Timed Out';
+        issueIcon = '⚠️';
+        issueClass = 'warning';
+    } else if (record.status === 'INCOMPLETE') {
+        issueType = 'Incomplete Record';
+        issueIcon = 'ℹ️';
+        issueClass = 'info';
+    }
+
+    return `
+        <div class="correction-card ${issueClass}">
+            <div class="correction-card-header">
+                <div class="correction-student-info">
+                    <h4>
+                        ${record.studentName}
+                        <span class="badge-number">${record.idBadge}</span>
+                    </h4>
+                    <div class="correction-issue-badge ${issueClass}">
+                        ${issueIcon} ${issueType}
+                    </div>
+                </div>
+                <div class="correction-actions">
+                    <button class="btn ${severity === 'critical' ? 'btn-error' : 'btn-warning'}" onclick="correctTime(${record.id})">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                        Correct Time
+                    </button>
+                    <button class="btn btn-success" onclick="markAsCorrect(${record.id})" title="Time is correct, no changes needed">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        Mark as Correct
+                    </button>
+                </div>
+            </div>
+
+            <div class="correction-details">
+                <div class="correction-detail-item">
+                    <span class="detail-label">📅 Date:</span>
+                    <span class="detail-value">${formatDate(record.attendanceDate)}</span>
+                </div>
+                <div class="correction-detail-item">
+                    <span class="detail-label">⏰ Time In:</span>
+                    <span class="detail-value">${formatTime(record.timeIn)}</span>
+                </div>
+                <div class="correction-detail-item">
+                    <span class="detail-label">📊 Status:</span>
+                    <span class="detail-value">
+                        <span class="status-badge status-${record.status?.toLowerCase().replace('_', '-')}">
+                            ${record.status?.replace('_', ' ') || 'Unknown'}
+                        </span>
+                    </span>
+                </div>
+                <div class="correction-detail-item">
+                    <span class="detail-label">⏱️ Hours Worked:</span>
+                    <span class="detail-value ${isOvertime ? 'text-error' : ''}">
+                        <strong>${formatHoursMinutes(hoursWorked)}</strong>
+                        ${isOvertime ? ' <span class="overtime-warning">⚠️ OVERTIME</span>' : ' (estimated)'}
+                    </span>
+                </div>
+            </div>
+
+            ${isOvertime ? `
+                <div class="alert alert-error" style="margin-top: 1rem;">
+                    <strong>⚠️ URGENT:</strong> This student has been working for over 12 hours!
+                    Please review immediately and either correct the time or mark as accurate if they actually worked these hours.
+                </div>
+            ` : `
+                <div class="correction-hint">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M12 16v-4"></path>
+                        <path d="M12 8h.01"></path>
+                    </svg>
+                    <span>Click "Correct Time" to adjust hours, or "Mark as Correct" if the time is accurate</span>
+                </div>
+            `}
         </div>
-    `).join('');
+    `;
 }
 
 async function correctTime(recordId) {
@@ -2074,6 +2324,83 @@ async function submitTimeCorrection(event) {
     }
 }
 
+// ==================== MARK AS CORRECT (NO CORRECTION NEEDED) ====================
+
+async function markAsCorrect(recordId) {
+    const record = await getRecordById(recordId);
+    if (!record) {
+        showAlert('Record not found', 'error');
+        return;
+    }
+
+    const confirmed = confirm(
+        `Mark this record as correct?\n\n` +
+        `Student: ${record.studentName}\n` +
+        `Date: ${formatDate(record.attendanceDate)}\n` +
+        `Time In: ${formatTime(record.timeIn)}\n` +
+        `Hours: ${formatHoursMinutes(parseFloat(calculateElapsedHours(record.timeIn)))}\n\n` +
+        `This will mark the record as reviewed and remove it from the corrections list.`
+    );
+
+    if (!confirmed) return;
+
+    showLoading();
+
+    try {
+        // Calculate the actual hours worked
+        const now = new Date();
+        const timeIn = new Date(record.timeIn);
+        const hoursWorked = (now - timeIn) / (1000 * 60 * 60);
+
+        const response = await fetch(`${API_BASE_URL}/admin/attendance/correct`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                attendanceRecordId: record.id,
+                correctedHours: parseFloat(hoursWorked.toFixed(2)),
+                correctionReason: 'Reviewed by admin - No correction needed. Time is accurate.'
+            })
+        });
+
+        if (response.ok) {
+            showAlert('✅ Record marked as correct!', 'success');
+            await Promise.all([
+                loadIncompleteRecords(),
+                loadNotifications(),
+                loadDashboard()
+            ]);
+        } else {
+            const data = await response.json();
+            showAlert(data.message || 'Failed to mark record as correct', 'error');
+        }
+    } catch (error) {
+        console.error('Mark as correct error:', error);
+        showAlert('Failed to mark record as correct', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Helper function to get record by ID
+async function getRecordById(recordId) {
+    try {
+        // First try to find in current corrections list
+        const correctionsList = document.getElementById('correctionsList');
+        if (correctionsList) {
+            // If we have the record in memory from loadIncompleteRecords
+            const response = await fetch(`${API_BASE_URL}/admin/attendance/incomplete`);
+            if (response.ok) {
+                const records = await response.json();
+                return records.find(r => r.id === recordId);
+            }
+        }
+        return null;
+    } catch (error) {
+        console.error('Failed to get record:', error);
+        return null;
+    }
+}
+
 // ==================== SCHEDULE MANAGEMENT ====================
 async function loadScheduleOverview() {
     try {
@@ -2093,6 +2420,10 @@ async function loadScheduleOverview() {
 
 function displayScheduleOverview(data) {
     const content = document.getElementById('scheduleOverviewContent');
+
+    // Update sidebar stats
+    updateScheduleSidebarStats(data);
+
     const complianceRate = data.studentsWithSchedule ?
         Math.round((data.studentsWithSchedule / data.totalStudents) * 100) : 0;
 
@@ -2131,8 +2462,21 @@ async function loadLateArrivals() {
 function displayLateArrivals(arrivals) {
     const tbody = document.getElementById('lateArrivalsBody');
 
+    // Update sidebar
+    updateLateArrivalsSidebar(arrivals);
+
     if (arrivals.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty-state"><h3>No late arrivals today</h3></td></tr>';
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="empty-state-modern">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    <h3>✅ No late arrivals today</h3>
+                    <p>All students arrived on time!</p>
+                </td>
+            </tr>
+        `;
         return;
     }
 
@@ -2449,15 +2793,25 @@ function toggleAutoRefresh() {
     const toggleBtn = document.getElementById('autoRefreshToggle');
 
     if (autoRefreshEnabled) {
-        toggleBtn.textContent = '🔄 Auto-Refresh: ON';
-        toggleBtn.classList.remove('btn-secondary');
-        toggleBtn.classList.add('btn-success');
+        toggleBtn.innerHTML = `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <polyline points="1 20 1 14 7 14"></polyline>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            Auto-Refresh: ON
+        `;
         startLiveTaskPolling();
         showAlert('Auto-refresh enabled', 'success');
     } else {
-        toggleBtn.textContent = '⏸️ Auto-Refresh: OFF';
-        toggleBtn.classList.remove('btn-success');
-        toggleBtn.classList.add('btn-secondary');
+        toggleBtn.innerHTML = `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+            </svg>
+            Auto-Refresh: OFF
+        `;
         stopLiveTaskPolling();
         showAlert('Auto-refresh disabled', 'info');
     }
@@ -2467,12 +2821,11 @@ async function loadLiveTaskUpdates(silent = false) {
     if (!silent) showLoading();
 
     try {
-        const today = formatDate(new Date());
-        const recordsResponse = await fetch(`${API_BASE_URL}/attendance/records?date=${today}`);
-        if (!recordsResponse.ok) throw new Error('Failed to fetch records');
+        // ✅ FIX: Get ALL currently active sessions (regardless of date)
+        const recordsResponse = await fetch(`${API_BASE_URL}/admin/attendance/active-sessions`);
+        if (!recordsResponse.ok) throw new Error('Failed to fetch active sessions');
 
-        const records = await recordsResponse.json();
-        const activeRecords = records.filter(r => r.status === 'TIMED_IN');
+        const activeRecords = await recordsResponse.json();
 
         const taskPromises = activeRecords.map(async (record) => {
             try {
@@ -2817,6 +3170,22 @@ function truncateText(text, maxLength) {
     return text.substring(0, maxLength) + '...';
 }
 
+document.addEventListener('DOMContentLoaded', function() {
+    // Add click handlers to filter chips in Live Tasks
+    const liveTasksTab = document.getElementById('liveTasks');
+    if (liveTasksTab) {
+        const filterChips = liveTasksTab.querySelectorAll('.filter-chip');
+        filterChips.forEach(chip => {
+            chip.addEventListener('click', function() {
+                // Remove active class from all chips
+                filterChips.forEach(c => c.classList.remove('active'));
+                // Add active class to clicked chip
+                this.classList.add('active');
+            });
+        });
+    }
+});
+
 // ==================== REPORTS ====================
 async function downloadCSVReport() {
     const startDate = document.getElementById('reportStartDate').value;
@@ -2931,6 +3300,183 @@ function generateMonthReport() {
     downloadCSVReport();
 }
 
+// ==================== ADDITIONAL STUDENT REPORT FUNCTIONS ====================
+
+/**
+ * Download only active students
+ */
+function downloadActiveStudentsCSV() {
+    const activeStudents = studentsCache.filter(s => s.status === 'ACTIVE');
+
+    if (activeStudents.length === 0) {
+        showAlert('No active students to export', 'warning');
+        return;
+    }
+
+    exportStudentsToCSV(activeStudents, 'active-students');
+}
+
+/**
+ * Download progress report with detailed completion info
+ */
+function downloadProgressReport() {
+    const studentsWithHours = studentsCache.filter(s => s.requiredHours && s.requiredHours > 0);
+
+    if (studentsWithHours.length === 0) {
+        showAlert('No students with required hours set', 'warning');
+        return;
+    }
+
+    const headers = [
+        'ID Badge',
+        'Full Name',
+        'School',
+        'Status',
+        'Required Hours',
+        'Hours Completed',
+        'Hours Remaining',
+        'Progress (%)',
+        'Completion Status'
+    ];
+
+    const csvRows = [headers.join(',')];
+
+    studentsWithHours.forEach(student => {
+        const totalHours = parseFloat(student.totalAccumulatedHours || 0);
+        const requiredHours = parseFloat(student.requiredHours);
+        const remaining = Math.max(0, requiredHours - totalHours);
+        const progress = ((totalHours / requiredHours) * 100).toFixed(1);
+
+        let completionStatus = 'In Progress';
+        if (totalHours >= requiredHours) {
+            completionStatus = 'Completed';
+        } else if (progress >= 90) {
+            completionStatus = 'Near Completion';
+        } else if (progress >= 75) {
+            completionStatus = 'Almost There';
+        } else if (progress >= 60) {
+            completionStatus = 'More Than Halfway';
+        } else if (progress >= 50) {
+            completionStatus = 'Halfway';
+        } else if (progress >= 30) {
+            completionStatus = 'Making Progress';
+        } else if (progress >= 15) {
+            completionStatus = 'Getting Started';
+        } else if (progress >= 5) {
+            completionStatus = 'Just Started';
+        }
+
+        const row = [
+            student.idBadge,
+            `"${student.fullName}"`,
+            `"${student.school || 'N/A'}"`,
+            student.status,
+            requiredHours.toFixed(2),
+            totalHours.toFixed(2),
+            remaining.toFixed(2),
+            progress,
+            completionStatus
+        ];
+
+        csvRows.push(row.join(','));
+    });
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    const filename = `progress-report-${dateStr}.csv`;
+
+    downloadFile(blob, filename);
+    showAlert(`✅ Progress report exported for ${studentsWithHours.length} student(s)!`, 'success');
+}
+
+/**
+ * Helper function to export students array to CSV
+ */
+function exportStudentsToCSV(students, prefix = 'students') {
+    const headers = [
+        'ID Badge',
+        'Full Name',
+        'School',
+        'Status',
+        'Required Hours',
+        'Total Hours',
+        'Progress (%)',
+        'Hours Remaining',
+        'Schedule Start',
+        'Schedule End',
+        'Grace Period',
+        'Schedule Active'
+    ];
+
+    const csvRows = [headers.join(',')];
+
+    students.forEach(student => {
+        const totalHours = parseFloat(student.totalAccumulatedHours || 0);
+        const requiredHours = parseFloat(student.requiredHours || 0);
+        const progress = requiredHours > 0 ? ((totalHours / requiredHours) * 100).toFixed(1) : 'N/A';
+        const remaining = requiredHours > 0 ? Math.max(0, requiredHours - totalHours).toFixed(2) : 'N/A';
+
+        const row = [
+            student.idBadge || 'N/A',
+            `"${student.fullName || 'Unknown'}"`,
+            `"${student.school || 'N/A'}"`,
+            student.status || 'ACTIVE',
+            requiredHours > 0 ? requiredHours : 'Not Set',
+            totalHours.toFixed(2),
+            progress,
+            remaining,
+            student.scheduledStartTime || 'N/A',
+            student.scheduledEndTime || 'N/A',
+            student.gracePeriodMinutes || 'N/A',
+            student.scheduleActive ? 'Yes' : 'No'
+        ];
+
+        csvRows.push(row.join(','));
+    });
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    const filename = `${prefix}-export-${dateStr}.csv`;
+
+    downloadFile(blob, filename);
+    showAlert(`✅ Exported ${students.length} student(s) successfully!`, 'success');
+}
+
+/**
+ * Update report statistics in sidebar
+ */
+async function updateReportStats() {
+    try {
+        const studentsResponse = await fetch(`${API_BASE_URL}/students/all`);
+        const students = studentsResponse.ok ? await studentsResponse.json() : [];
+
+        const today = formatDate(new Date());
+        const recordsResponse = await fetch(`${API_BASE_URL}/attendance/records?date=${today}`);
+        const records = recordsResponse.ok ? await recordsResponse.json() : [];
+
+        document.getElementById('reportTotalStudents').textContent = students.length;
+        document.getElementById('reportActiveStudents').textContent = students.filter(s => s.status === 'ACTIVE').length;
+        document.getElementById('reportTotalRecords').textContent = records.length;
+
+        showAlert('Report statistics updated', 'success');
+    } catch (error) {
+        console.error('Failed to update report stats:', error);
+    }
+}
+
+// Auto-update report stats when tab is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Update stats when Reports tab is clicked
+    const reportsTab = document.querySelector('[onclick="switchTab(\'reports\')"]');
+    if (reportsTab) {
+        reportsTab.addEventListener('click', updateReportStats);
+    }
+});
+
 // ==================== NOTIFICATIONS ====================
 async function loadNotifications() {
     try {
@@ -2972,32 +3518,124 @@ async function displayNotifications() {
         if (response.ok) {
             const notifications = await response.json();
 
+            // Update stats
+            updateNotificationStats(notifications);
+
             if (notifications.length === 0) {
                 content.innerHTML = `
-                    <div class="empty-state">
-                        <h3>No notifications</h3>
-                        <p>All caught up!</p>
+                    <div class="notification-empty-state">
+                        <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                        </svg>
+                        <h3>All Clear!</h3>
+                        <p>You don't have any notifications</p>
                     </div>
                 `;
                 return;
             }
 
-            content.innerHTML = notifications.map(notification => `
-                <div class="notification-item ${notification.isRead ? 'read' : 'unread'}" onclick="markNotificationRead(${notification.id})">
-                    <div class="notification-meta">
-                        <div class="notification-type">${notification.notificationType.replace('_', ' ')}</div>
-                        <div class="notification-time">${formatTimeAgo(notification.createdAt)}</div>
+            content.innerHTML = notifications.map(notification => {
+                const icon = getNotificationIcon(notification.notificationType);
+
+                return `
+                    <div class="notification-item-enhanced ${notification.isRead ? 'read' : 'unread'}"
+                            onclick="markNotificationRead(${notification.id})"
+                            data-read="${notification.isRead}">
+                        <div class="notification-icon">${icon}</div>
+                        <div class="notification-body">
+                            <div class="notification-meta">
+                                <span class="notification-type">${notification.notificationType.replace('_', ' ')}</span>
+                                <span class="notification-time">${formatTimeAgo(notification.createdAt)}</span>
+                            </div>
+                            <div class="notification-message">${notification.message}</div>
+                            ${!notification.isRead ? `
+                                <div class="notification-actions">
+                                    <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); markNotificationRead(${notification.id});">
+                                        Mark as Read
+                                    </button>
+                                </div>
+                            ` : ''}
+                        </div>
                     </div>
-                    <div class="notification-message">${notification.message}</div>
-                    ${!notification.isRead ? '<div style="margin-top: 0.5rem;"><button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); markNotificationRead(' + notification.id + ');">Mark as Read</button></div>' : ''}
-                </div>
-            `).join('');
+                `;
+            }).join('');
         } else {
-            content.innerHTML = '<div class="empty-state"><h3>Failed to load notifications</h3></div>';
+            content.innerHTML = `
+                <div class="notification-empty-state">
+                    <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <h3>Failed to Load</h3>
+                    <p>Unable to load notifications</p>
+                </div>
+            `;
         }
     } catch (error) {
-        content.innerHTML = '<div class="empty-state"><h3>Failed to load notifications</h3></div>';
+        content.innerHTML = `
+            <div class="notification-empty-state">
+                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <h3>Error</h3>
+                <p>Failed to load notifications</p>
+            </div>
+        `;
     }
+}
+
+// Get icon based on notification type
+function getNotificationIcon(type) {
+    const icons = {
+        'FORGOT_TIME_OUT': '⏰',
+        'LATE_ARRIVAL': '⚠️',
+        'TIME_CORRECTION': '✏️',
+        'SYSTEM_ERROR': '🔧',
+        'STUDENT_COMPLETED': '🎉',
+        'AUTO_TIMEOUT': '🔔',
+        'SCHEDULE_REMINDER': '📅'
+    };
+    return icons[type] || '🔔';
+}
+
+// Update notification stats
+function updateNotificationStats(notifications) {
+    const total = notifications.length;
+    const unread = notifications.filter(n => !n.isRead).length;
+    const read = total - unread;
+
+    document.getElementById('notifTotalCount').textContent = total;
+    document.getElementById('notifUnreadCount').textContent = unread;
+    document.getElementById('filterAllCount').textContent = total;
+    document.getElementById('filterUnreadCount').textContent = unread;
+    document.getElementById('filterReadCount').textContent = read;
+}
+
+// Filter notifications
+function filterNotifications(filter) {
+    // Update active tab
+    document.querySelectorAll('.notification-filter-tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    document.querySelector(`[data-filter="${filter}"]`).classList.add('active');
+
+    // Filter notification items
+    const items = document.querySelectorAll('.notification-item-enhanced');
+    items.forEach(item => {
+        const isRead = item.getAttribute('data-read') === 'true';
+
+        if (filter === 'all') {
+            item.style.display = 'flex';
+        } else if (filter === 'unread') {
+            item.style.display = isRead ? 'none' : 'flex';
+        } else if (filter === 'read') {
+            item.style.display = isRead ? 'flex' : 'none';
+        }
+    });
 }
 
 async function markNotificationRead(notificationId) {
@@ -3346,6 +3984,81 @@ async function generateSecurePassword() {
         }
     } catch (error) {
         showAlert('Failed to generate password', 'error');
+    }
+}
+
+// ==================== SIDEBAR STATS UPDATES ====================
+
+// Update Attendance Sidebar Stats
+function updateAttendanceSidebarStats(records) {
+    const totalRecords = records.length;
+    const totalHours = records.reduce((sum, r) => sum + (parseFloat(r.totalHours) || 0), 0);
+    const uniqueStudents = new Set(records.map(r => r.idBadge)).size;
+    const averageHours = totalRecords > 0 ? totalHours / totalRecords : 0;
+
+    document.getElementById('sidebarTotalRecords').textContent = totalRecords;
+    document.getElementById('sidebarTotalHours').textContent = formatHoursMinutes(totalHours);
+    document.getElementById('sidebarActiveCount').textContent = uniqueStudents;
+    document.getElementById('sidebarAvgHours').textContent = formatHoursMinutes(averageHours);
+
+    // Show/hide download button
+    const downloadBtn = document.getElementById('sidebarDownloadBtn');
+    if (downloadBtn) {
+        downloadBtn.style.display = totalRecords > 0 ? 'flex' : 'none';
+    }
+}
+
+// Update Schedule Sidebar Stats
+function updateScheduleSidebarStats(data) {
+    const withSchedule = data.studentsWithSchedule || 0;
+    const withoutSchedule = data.studentsWithoutSchedule || 0;
+    const total = withSchedule + withoutSchedule;
+    const compliance = total > 0 ? Math.round((withSchedule / total) * 100) : 0;
+
+    document.getElementById('sidebarWithSchedule').textContent = withSchedule;
+    document.getElementById('sidebarWithoutSchedule').textContent = withoutSchedule;
+    document.getElementById('sidebarCompliance').textContent = compliance + '%';
+}
+
+// Update Late Arrivals Sidebar
+function updateLateArrivalsSidebar(arrivals) {
+    const lateToday = arrivals.length || 0;
+    const sidebarElement = document.getElementById('sidebarLateToday');
+    if (sidebarElement) {
+        sidebarElement.textContent = lateToday;
+    }
+}
+
+// Update Corrections Sidebar Stats
+function updateCorrectionsSidebarStats(records) {
+    const pendingCount = records.length;
+
+    // Count critical (12+ hours)
+    const criticalCount = records.filter(r => {
+        const hours = parseFloat(calculateElapsedHours(r.timeIn));
+        return r.status === 'TIMED_IN' && hours >= 12;
+    }).length;
+
+    // Update main pending count
+    document.getElementById('sidebarPendingCorrections').textContent = pendingCount;
+
+    // Count this month's corrections
+    const now = new Date();
+    const thisMonth = records.filter(r => {
+        const recordDate = new Date(r.attendanceDate);
+        return recordDate.getMonth() === now.getMonth() &&
+                recordDate.getFullYear() === now.getFullYear();
+    }).length;
+
+    const monthElement = document.getElementById('sidebarMonthCorrections');
+    if (monthElement) {
+        monthElement.textContent = thisMonth;
+    }
+
+    // Add critical count to sidebar if element exists
+    const criticalElement = document.getElementById('sidebarCriticalCorrections');
+    if (criticalElement) {
+        criticalElement.textContent = criticalCount;
     }
 }
 

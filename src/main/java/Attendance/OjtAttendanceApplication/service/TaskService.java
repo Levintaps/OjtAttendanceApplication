@@ -29,16 +29,16 @@ public class TaskService {
      * Add a task entry for a student's current session
      */
     public TaskEntryDto addTask(AddTaskRequest request) {
-        // Find active attendance record
+        // Find active attendance record (regardless of date)
         Student student = studentRepository.findByIdBadge(request.getIdBadge())
                 .orElseThrow(() -> new RuntimeException("Student not found with ID badge: " + request.getIdBadge()));
 
-        LocalDate today = LocalDate.now();
+        // Find ANY active session for this student (not just today's date)
         AttendanceRecord activeRecord = attendanceRecordRepository
-                .findByStudentAndAttendanceDateAndStatus(student, today, AttendanceStatus.TIMED_IN)
-                .orElseThrow(() -> new RuntimeException("No active attendance session found for today"));
+                .findActiveSessionByStudent(student)
+                .orElseThrow(() -> new RuntimeException("No active attendance session found. Please time in first."));
 
-        // Validate task timing
+        // Validate task timing - use active record's time in, not current date
         validateTaskTiming(request.getCompletedAt(), activeRecord.getTimeIn());
 
         // Create and save task entry
@@ -52,6 +52,7 @@ public class TaskService {
         TaskEntry savedTask = taskEntryRepository.save(taskEntry);
         return convertToDto(savedTask);
     }
+
 
     /**
      * Get all tasks for a student's attendance record
@@ -130,9 +131,10 @@ public class TaskService {
         LocalDateTime now = LocalDateTime.now();
 
         if (completedAt.isBefore(sessionStart)) {
-            throw new RuntimeException("Task completion time cannot be before your time-in today");
+            throw new RuntimeException("Task completion time cannot be before your time-in for this session");
         }
 
+        // Allow tasks up to 5 minutes in the future (for clock sync issues)
         if (completedAt.isAfter(now.plusMinutes(5))) {
             throw new RuntimeException("Task completion time cannot be in the future");
         }
