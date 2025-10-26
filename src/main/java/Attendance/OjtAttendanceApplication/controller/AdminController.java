@@ -726,5 +726,19 @@ public class AdminController {
         dto.setBreakDeducted(record.getBreakDeducted());
         return dto;
     }
+
+    /**
+     * Admin manual attendance entry
+     * Allows admins to manually create attendance records for students
+     */
+    @PostMapping("/attendance/manual-entry")
+    public ResponseEntity<?> manualAttendanceEntry(@Valid @RequestBody ManualAttendanceRequest request) {
+        try {
+            AttendanceResponse response = attendanceService.processManualAttendance(request);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
+    }
 }
 

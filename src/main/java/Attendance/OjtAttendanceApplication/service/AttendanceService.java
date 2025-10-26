@@ -540,6 +540,112 @@ public class AttendanceService {
         );
     }
 
+    /**
+     * Admin manual attendance entry
+     * Allows admins to manually create attendance records with custom date/time
+     */
+    @Transactional
+    public AttendanceResponse processManualAttendance(ManualAttendanceRequest request) {
+        // Find student
+        Student student = studentRepository.findByIdBadge(request.getIdBadge())
+                .orElseThrow(() -> new RuntimeException("Student not found with ID badge: " + request.getIdBadge()));
+
+        if (student.getStatus() != StudentStatus.ACTIVE) {
+            throw new RuntimeException("Only active students can have manual attendance entries. Current status: " + student.getStatus());
+        }
+
+        // Validate date is not in the future
+        if (request.getTimeIn().isAfter(LocalDateTime.now())) {
+            throw new RuntimeException("Time-in cannot be in the future");
+        }
+
+        // Check if student already has a record for this date (work date)
+        LocalDate workDate = calculateWorkDate(request.getTimeIn());
+        List<AttendanceRecord> existingRecords = attendanceRecordRepository
+                .findByStudentAndWorkDate(student, workDate);
+
+        if (!existingRecords.isEmpty()) {
+            throw new RuntimeException("Student already has an attendance record for this date (work date: " + workDate + ")");
+        }
+
+        // Create attendance record
+        AttendanceRecord record = new AttendanceRecord(student, request.getTimeIn());
+        record.setWorkDate(workDate);
+
+        // If time-out is provided, process as complete record
+        if (request.getTimeOut() != null) {
+            if (request.getTimeOut().isBefore(request.getTimeIn())) {
+                throw new RuntimeException("Time-out must be after time-in");
+            }
+
+            if (request.getTimeOut().isAfter(LocalDateTime.now())) {
+                throw new RuntimeException("Time-out cannot be in the future");
+            }
+
+            record.setTimeOut(request.getTimeOut());
+            record.setStatus(AttendanceStatus.ADMIN_CORRECTED);
+
+            // Calculate hours
+            HoursCalculation calculation = calculateScheduleAwareHours(record);
+            updateRecordHours(record, calculation);
+
+            // Set tasks with admin note
+            String tasksWithNote = (request.getTasksCompleted() != null ? request.getTasksCompleted() : "No tasks recorded") +
+                    "\n\n[ADMIN MANUAL ENTRY: " + request.getAdminReason() + "]";
+            record.setTasksCompleted(tasksWithNote);
+
+            // Update student's total hours
+            student.setTotalAccumulatedHours(student.getTotalAccumulatedHours() + calculation.getTotalHours());
+
+            attendanceRecordRepository.save(record);
+            studentRepository.save(student);
+
+            return new AttendanceResponse(
+                    "MANUAL_ENTRY_COMPLETE",
+                    "Manual attendance record created successfully (Time-In and Time-Out)",
+                    true,
+                    student.getFullName(),
+                    student.getIdBadge(),
+                    request.getTimeIn(),
+                    request.getTimeOut(),
+                    roundToNearestHour(request.getTimeIn()),
+                    roundToNearestHour(request.getTimeOut()),
+                    calculation.getTotalHours(),
+                    calculation.getRegularHours(),
+                    calculation.getOvertimeHours(),
+                    calculation.getUndertimeHours(),
+                    student.getTotalAccumulatedHours(),
+                    record.getTasksCompleted(),
+                    calculation.isBreakDeducted()
+            );
+        } else {
+            // Time-in only
+            record.setStatus(AttendanceStatus.TIMED_IN);
+            record.setTasksCompleted("[ADMIN MANUAL ENTRY: " + request.getAdminReason() + "]");
+
+            attendanceRecordRepository.save(record);
+
+            return new AttendanceResponse(
+                    "MANUAL_ENTRY_TIME_IN",
+                    "Manual time-in created successfully. Student is now marked as timed-in.",
+                    true,
+                    student.getFullName(),
+                    student.getIdBadge(),
+                    request.getTimeIn(),
+                    null,
+                    roundToNearestHour(request.getTimeIn()),
+                    null,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    student.getTotalAccumulatedHours(),
+                    record.getTasksCompleted(),
+                    false
+            );
+        }
+    }
+
     // ==================== SESSION INFO ====================
 
     public AttendanceSessionInfo getCurrentSessionInfo(String idBadge) {
