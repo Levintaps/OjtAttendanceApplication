@@ -14,10 +14,6 @@
     <div class="header">
         <div class="header-content">
             <div class="header-left">
-                <button class="notification-btn" id="notificationBtn" onclick="toggleNotificationPanel()">
-                    🔔
-                    <div class="notification-badge" id="notificationBadge">0</div>
-                </button>
                 <div>
                     <div class="header-title">Admin Dashboard</div>
                     <div class="header-subtitle">Intern Attendance Management System</div>
@@ -40,6 +36,10 @@
             <button class="nav-tab" onclick="switchTab('schedules')">Schedules</button>
             <button class="nav-tab" onclick="switchTab('liveTasks')">Live Tasks</button>
             <button class="nav-tab" onclick="switchTab('reports')">Reports</button>
+            <button class="nav-tab" onclick="switchTab('notifications')">
+                Notifications
+                <span class="nav-notification-badge" id="navNotificationBadge">0</span>
+            </button>
             <button class="nav-tab" onclick="switchTab('settings')">Settings</button>
         </div>
 
@@ -293,6 +293,13 @@
                                     <line x1="6" y1="6" x2="18" y2="18"></line>
                                 </svg>
                                 Clear Filters
+                            </button>
+                            <button class="quick-action-btn" onclick="showManualEntryModal()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                </svg>
+                                Manual Entry
                             </button>
                         </div>
                     </div>
@@ -1136,6 +1143,108 @@
             </div>
         </div>
 
+        <!-- Notifications Tab -->
+        <div id="notifications" class="tab-content">
+            <div class="unified-layout">
+                <!-- Sidebar -->
+                <aside class="unified-sidebar">
+                    <div class="sidebar-section">
+                        <h3>📊 Overview</h3>
+                        <div class="sidebar-stats">
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Total</span>
+                                <span class="sidebar-stat-value" id="sidebarNotifTotal">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Unread</span>
+                                <span class="sidebar-stat-value" id="sidebarNotifUnread">0</span>
+                            </div>
+                            <div class="sidebar-stat-item">
+                                <span class="sidebar-stat-label">Read</span>
+                                <span class="sidebar-stat-value" id="sidebarNotifRead">0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <h3>🔍 Filters</h3>
+                        <div class="filter-chips">
+                            <button class="filter-chip active" onclick="filterNotificationsTab('all')" data-filter="all">
+                                <span class="filter-chip-label">All</span>
+                                <span class="filter-chip-count" id="filterAllCountTab">0</span>
+                            </button>
+                            <button class="filter-chip" onclick="filterNotificationsTab('unread')" data-filter="unread">
+                                <span class="filter-chip-label">Unread</span>
+                                <span class="filter-chip-count" id="filterUnreadCountTab">0</span>
+                            </button>
+                            <button class="filter-chip" onclick="filterNotificationsTab('read')" data-filter="read">
+                                <span class="filter-chip-label">Read</span>
+                                <span class="filter-chip-count" id="filterReadCountTab">0</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <h3>🔧 Actions</h3>
+                        <div class="quick-actions">
+                            <button class="quick-action-btn" onclick="loadNotificationsTab()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"></path>
+                                </svg>
+                                Refresh
+                            </button>
+                            <button class="quick-action-btn" onclick="markAllNotificationsReadTab()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                                Mark All Read
+                            </button>
+                            <button class="quick-action-btn" onclick="clearReadNotificationsTab()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                                Clear Read
+                            </button>
+                            <button class="quick-action-btn" onclick="cleanupOldNotificationsTab()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+                                </svg>
+                                Cleanup Old
+                            </button>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Content -->
+                <main class="unified-content">
+                    <div class="page-header">
+                        <div class="page-header-top">
+                            <div class="page-title">
+                                <h2>🔔 Notifications</h2>
+                                <p>View and manage system notifications</p>
+                            </div>
+                            <button class="btn btn-error" onclick="clearAllNotificationsTab()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                                Clear All
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="notificationsTabContent" class="card">
+                        <div class="notification-loading">
+                            <div class="spinner"></div>
+                            <p>Loading notifications...</p>
+                        </div>
+                    </div>
+                </main>
+            </div>
+        </div>
+
         <!-- Settings Tab -->
         <div id="settings" class="tab-content">
             <div class="card">
@@ -1246,75 +1355,6 @@
                 </form>
             </div>
         </div>
-    </div>
-</div>
-
-<!-- Notification Panel -->
-<div class="notification-panel" id="notificationPanel">
-    <div class="notification-header">
-        <h3>Notifications</h3>
-        <button class="modal-close" onclick="toggleNotificationPanel()">×</button>
-    </div>
-
-    <!-- Stats Bar -->
-    <div class="notification-stats">
-        <div class="notification-stat-item">
-            <div class="notification-stat-value" id="notifTotalCount">0</div>
-            <div class="notification-stat-label">Total</div>
-        </div>
-        <div class="notification-stat-item">
-            <div class="notification-stat-value" id="notifUnreadCount">0</div>
-            <div class="notification-stat-label">Unread</div>
-        </div>
-    </div>
-
-    <!-- Filter Tabs -->
-    <div class="notification-filters">
-        <button class="notification-filter-tab active" onclick="filterNotifications('all')" data-filter="all">
-            All
-            <span class="notification-filter-count" id="filterAllCount">0</span>
-        </button>
-        <button class="notification-filter-tab" onclick="filterNotifications('unread')" data-filter="unread">
-            Unread
-            <span class="notification-filter-count" id="filterUnreadCount">0</span>
-        </button>
-        <button class="notification-filter-tab" onclick="filterNotifications('read')" data-filter="read">
-            Read
-            <span class="notification-filter-count" id="filterReadCount">0</span>
-        </button>
-    </div>
-
-    <div class="notification-content" id="notificationContent">
-        <div class="notification-loading">
-            <div class="spinner"></div>
-            <p>Loading notifications...</p>
-        </div>
-    </div>
-
-    <div class="notification-footer">
-        <button class="btn btn-primary" onclick="markAllNotificationsRead()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
-            Mark All as Read
-        </button>
-
-        <div class="notification-footer-actions">
-            <button class="btn btn-sm btn-secondary" onclick="clearReadNotifications()">
-                Clear Read
-            </button>
-            <button class="btn btn-sm btn-secondary" onclick="cleanupOldNotifications()">
-                Cleanup Old
-            </button>
-        </div>
-
-        <button class="btn btn-error" onclick="clearAllNotifications()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            </svg>
-            Clear All
-        </button>
     </div>
 </div>
 
@@ -1480,6 +1520,35 @@
                 <button type="submit" class="btn btn-warning" id="deleteSubmitBtn">Deactivate Student</button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="deleteConfirmationModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header" style="border-bottom: none; padding-bottom: 0;">
+            <button class="modal-close" onclick="closeModal('deleteConfirmationModal')" style="position: absolute; right: 1.5rem; top: 1.5rem;">×</button>
+        </div>
+
+        <div id="deleteConfirmationContent">
+            <!-- Content will be dynamically loaded -->
+        </div>
+
+        <div class="modal-actions" style="margin-top: 2rem; padding-top: 1.5rem; border-top: 2px solid var(--border-color);">
+            <button class="btn btn-secondary" onclick="closeModal('deleteConfirmationModal')">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+                Cancel
+            </button>
+            <button class="btn btn-warning" id="confirmDeleteBtn" onclick="executeDeleteAction()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                Confirm Action
+            </button>
+        </div>
     </div>
 </div>
 
@@ -1681,6 +1750,304 @@
                 </button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Clear All Notifications Confirmation Modal -->
+<div id="clearAllNotificationsModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header" style="border-bottom: none; padding-bottom: 0;">
+            <button class="modal-close" onclick="closeModal('clearAllNotificationsModal')" style="position: absolute; right: 1.5rem; top: 1.5rem;">×</button>
+        </div>
+
+        <div class="confirm-entry-card hard-delete">
+            <div class="confirm-header critical">
+                <div class="confirm-icon danger">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </div>
+                <h3>🚨 DELETE ALL NOTIFICATIONS</h3>
+                <p>This action will permanently delete every notification</p>
+            </div>
+
+            <div class="confirm-details">
+                <div class="detail-row">
+                    <span class="detail-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                        </svg>
+                        Total Notifications
+                    </span>
+                    <span class="detail-value" id="clearAllTotalCount">0</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        Unread Notifications
+                    </span>
+                    <span class="detail-value" id="clearAllUnreadCount">0</span>
+                </div>
+            </div>
+
+            <div class="confirm-warning critical">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                <div class="confirm-warning-content">
+                    <strong>🚨 CRITICAL WARNING</strong>
+                    <p>This will permanently delete:</p>
+                    <ul>
+                        <li><strong>ALL notifications</strong> (read and unread)</li>
+                        <li><strong>Complete notification history</strong></li>
+                        <li><strong>System alerts and warnings</strong></li>
+                        <li><strong>Audit trail entries</strong></li>
+                    </ul>
+                    <p style="margin-top: 0.75rem;">
+                        <strong style="color: var(--error-color);">THIS CANNOT BE RECOVERED!</strong>
+                    </p>
+                </div>
+            </div>
+
+            <div class="badge-verification-section">
+                <div class="form-group">
+                    <label for="clearAllConfirmInput">
+                        Type <span class="badge-highlight">DELETE ALL</span> to confirm:
+                    </label>
+                    <input
+                            type="text"
+                            id="clearAllConfirmInput"
+                            placeholder="Type DELETE ALL to confirm"
+                            autocomplete="off"
+                            style="text-transform: uppercase;"
+                    >
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-actions" style="margin-top: 2rem; padding-top: 1.5rem; border-top: 2px solid var(--border-color);">
+            <button class="btn btn-secondary" onclick="closeModal('clearAllNotificationsModal')">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+                Cancel
+            </button>
+            <button class="btn btn-error" onclick="executeClearAllNotifications()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+                Yes, Permanently Delete All
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Manual Attendance Entry Modal -->
+<div id="manualEntryModal" class="modal">
+    <div class="modal-content modal-lg">
+        <div class="modal-header">
+            <h3>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.5rem;">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                Manual Attendance Entry
+            </h3>
+            <button class="modal-close" onclick="closeModal('manualEntryModal')">×</button>
+        </div>
+
+        <div class="alert alert-info">
+            <strong>ℹ️ Manual Entry Purpose:</strong> Use this to create attendance records when students forget to time-in/out, or when system issues occur. All manual entries are logged with your admin ID.
+        </div>
+
+        <form id="manualEntryForm" onsubmit="submitManualEntry(event)">
+            <!-- Student Selection -->
+            <div class="form-section">
+                <h4>👤 Student Information</h4>
+                <div class="form-group">
+                    <label for="manualIdBadge">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                        Student ID Badge:
+                    </label>
+                    <input type="text"
+                           id="manualIdBadge"
+                           placeholder="Enter 4-digit ID"
+                           maxlength="4"
+                           required
+                           oninput="this.value = this.value.replace(/\D/g, '').slice(0, 4); if(this.value.length === 4) validateManualBadge(this.value);">
+                    <div id="manualBadgeValidation"></div>
+                </div>
+            </div>
+
+            <!-- Entry Type Selection -->
+            <div class="form-section">
+                <h4>📋 Entry Type</h4>
+                <div class="form-group">
+                    <label>Select entry type:</label>
+                    <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: var(--border-radius-lg); flex: 1;">
+                            <input type="radio" name="entryType" id="entryTypeTimeIn" value="timeIn" checked onchange="toggleCompleteEntry()">
+                            <div>
+                                <strong>Time-In Only</strong>
+                                <small style="display: block; color: var(--text-muted);">Student will time-out later</small>
+                            </div>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: var(--border-radius-lg); flex: 1;">
+                            <input type="radio" name="entryType" id="entryTypeComplete" value="complete" onchange="toggleCompleteEntry()">
+                            <div>
+                                <strong>Complete Entry</strong>
+                                <small style="display: block; color: var(--text-muted);">Both time-in and time-out</small>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Time Entry -->
+            <div class="form-section">
+                <h4>⏰ Time Information</h4>
+                <div class="form-grid">
+                    <!-- Time In -->
+                    <div class="form-group">
+                        <label for="manualTimeIn">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                            Time In:
+                        </label>
+                        <input type="datetime-local" id="manualTimeIn" required>
+                        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="setQuickTime('in', 'now')">Now</button>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="setQuickTime('in', '6am')">6:00 AM</button>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="setQuickTime('in', '8am')">8:00 AM</button>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="setQuickTime('in', '10am')">10:00 AM</button>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="setQuickTime('in', '12pm')">12:00 AM</button>
+                        </div>
+                    </div>
+
+                    <!-- Time Out (conditional) -->
+                    <div class="form-group" id="manualTimeOutGroup" style="display: none;">
+                        <label for="manualTimeOut">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                            Time Out:
+                        </label>
+                        <input type="datetime-local" id="manualTimeOut">
+                        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="setQuickTime('out', 'now')">Now</button>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="setQuickTime('out', '3pm')">3:00 PM</button>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="setQuickTime('out', '5pm')">5:00 PM</button>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="setQuickTime('out', '7pm')">7:00 PM</button>
+                            <button type="button" class="btn btn-sm btn-secondary" onclick="setQuickTime('out', '9pm')">9:00 PM</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tasks (conditional) -->
+            <div class="form-section" id="manualTasksGroup" style="display: none;">
+                <h4>📝 Tasks Completed (Optional)</h4>
+                <div class="form-group">
+                    <label for="manualTasks">Tasks completed during this time:</label>
+                    <textarea id="manualTasks"
+                              placeholder="e.g., Completed coding tasks, attended team meetings, worked on documentation..."
+                              rows="3"></textarea>
+                    <small>This will be logged as the student's task entry for this session</small>
+                </div>
+            </div>
+
+            <!-- Admin Reason -->
+            <div class="form-section">
+                <h4>📄 Admin Justification</h4>
+                <div class="form-group">
+                    <label for="manualReason">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                        </svg>
+                        Reason for manual entry:
+                    </label>
+                    <textarea id="manualReason"
+                              placeholder="e.g., Student forgot to time-in due to internet issues, Power outage during work hours, System was down..."
+                              rows="3"
+                              required></textarea>
+                    <small>This reason will be permanently recorded for audit purposes</small>
+                </div>
+            </div>
+
+            <div class="alert alert-warning">
+                <strong>⚠️ Important:</strong> Manual entries are permanently logged with your admin account. Ensure all information is accurate before submitting.
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('manualEntryModal')">
+                    Cancel
+                </button>
+                <button type="submit" class="btn btn-warning">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    Create Manual Entry
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Manual Entry Confirmation Modal -->
+<div id="manualEntryConfirmModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Confirm Manual Entry</h3>
+            <button class="modal-close" onclick="closeModal('manualEntryConfirmModal')">×</button>
+        </div>
+
+        <div id="manualEntryConfirmContent">
+            <!-- Content will be dynamically loaded -->
+        </div>
+
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="closeModal('manualEntryConfirmModal')">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+                Cancel
+            </button>
+            <button class="btn btn-warning" onclick="executeManualEntry()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                Confirm & Create Entry
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Manual Entry Result Modal -->
+<div id="manualEntryResultModal" class="modal">
+    <div class="modal-content">
+        <div id="manualEntryResultContent">
+            <!-- Content will be dynamically loaded -->
+        </div>
     </div>
 </div>
 

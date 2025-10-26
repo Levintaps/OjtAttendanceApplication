@@ -79,7 +79,6 @@ function setupEventListeners() {
 
     // Form submissions
     const forms = {
-        'studentRegistrationFormNew': registerStudentWithSchedule,
         'timeCorrectionForm': submitTimeCorrection,
         'badgeManagementForm': submitBadgeChange,
         'hoursManagementForm': submitHoursChange,
@@ -155,6 +154,25 @@ function setupEventListeners() {
             }
         });
     }
+}
+
+function setupRegistrationFormListener() {
+    const form = document.getElementById('studentRegistrationFormNew');
+    if (!form) {
+        console.warn('Registration form not found');
+        return;
+    }
+
+    // Remove any existing listeners by cloning the form
+    const newForm = form.cloneNode(true);
+    form.parentNode.replaceChild(newForm, form);
+
+    // Add single event listener with capture phase to catch it first
+    newForm.addEventListener('submit', registerStudentWithSchedule, true);
+
+    console.log('✅ Registration form listener attached (duplicates removed)');
+
+    return newForm;
 }
 
 function setDefaultDates() {
@@ -252,6 +270,9 @@ async function loadTabData(tabName) {
             break;
         case 'liveTasks':
             await loadLiveTaskUpdates();
+            break;
+        case 'notifications':
+            await loadNotificationsTab();
             break;
         case 'settings':
             await loadSettings();
@@ -825,6 +846,22 @@ function showRegisterStudentModal() {
     const modal = document.getElementById('studentRegistrationModal');
     if (modal) {
         clearRegistrationFormNew();
+
+        // Setup clean form listener
+        const form = setupRegistrationFormListener();
+
+        // Make sure submit button is enabled
+        const submitBtn = form.querySelector('button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = `
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                Register Student
+            `;
+        }
+
         modal.classList.add('show');
         document.body.style.overflow = 'hidden';
         document.getElementById('regIdBadgeNew').focus();
@@ -867,7 +904,27 @@ async function validateBadge(badgeId, inputId) {
 }
 
 async function registerStudentWithSchedule(event) {
-    event.preventDefault();
+    // CRITICAL: Stop form submission immediately
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+    }
+
+    // Prevent double submissions
+    const form = document.getElementById('studentRegistrationFormNew');
+    const submitBtn = form.querySelector('button[type="submit"]');
+
+    // Check if already processing
+    if (submitBtn.disabled) {
+        console.log('⚠️ Registration already in progress, ignoring duplicate submission');
+        return;
+    }
+
+    // Disable submit button immediately
+    submitBtn.disabled = true;
+    const originalBtnText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<div class="spinner" style="width: 16px; height: 16px; margin: 0 auto;"></div> Registering...';
 
     const idBadge = document.getElementById('regIdBadgeNew').value.trim();
     const fullName = document.getElementById('regFullNameNew').value.trim();
@@ -879,30 +936,46 @@ async function registerStudentWithSchedule(event) {
     const gracePeriod = parseInt(document.getElementById('regGracePeriodNew').value);
     const scheduleActive = document.getElementById('regScheduleActiveNew').value === 'true';
 
+    // Validation
     if (!idBadge || !fullName || !school || !requiredHours) {
         showAlert('Please fill in all required fields', 'warning');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
         return;
     }
 
     if (!/^\d{4}$/.test(idBadge)) {
         showAlert('ID badge must be exactly 4 digits', 'error');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
         return;
     }
 
     const hoursNum = parseInt(requiredHours);
     if (hoursNum < 1 || hoursNum > 2000) {
         showAlert('Required hours must be between 1 and 2000', 'error');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
         return;
     }
 
     if (scheduleActive && startTime && endTime && startTime >= endTime) {
         showAlert('Start time must be before end time', 'error');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
         return;
     }
 
     showLoading();
 
+    // Flag to prevent duplicate notifications
+    let notificationShown = false;
+    let studentData = null;
+
     try {
+        // Step 1: Register the student
+        console.log('📝 Attempting to register student:', { idBadge, fullName, school, requiredHours: hoursNum });
+
         const registerResponse = await fetch(`${API_BASE_URL}/students/register-with-hours`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -914,38 +987,78 @@ async function registerStudentWithSchedule(event) {
             throw new Error(errorData.message || 'Registration failed');
         }
 
-        const studentData = await registerResponse.json();
+        studentData = await registerResponse.json();
+        console.log('✅ Student registered:', studentData);
+
+        // Step 2: Try to set schedule (if enabled)
+        let scheduleSuccess = false;
+        let scheduleAttempted = false;
 
         if (scheduleActive && startTime && endTime) {
-            const scheduleResponse = await fetch(`${API_BASE_URL}/admin/students/${studentData.id}/schedule`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    startTime,
-                    endTime,
-                    gracePeriodMinutes: gracePeriod,
-                    active: true
-                })
-            });
+            scheduleAttempted = true;
+            console.log('📅 Attempting to set schedule...');
 
-            if (!scheduleResponse.ok) {
-                showAlert(`Student ${studentData.fullName} registered successfully, but schedule setup failed.`, 'warning');
-            } else {
-                showAlert(`Student ${studentData.fullName} registered successfully with schedule!`, 'success');
+            try {
+                const scheduleResponse = await fetch(`${API_BASE_URL}/admin/students/${studentData.id}/schedule`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        startTime,
+                        endTime,
+                        gracePeriodMinutes: gracePeriod,
+                        active: true
+                    })
+                });
+
+                if (scheduleResponse.ok) {
+                    scheduleSuccess = true;
+                    console.log('✅ Schedule set successfully');
+                } else {
+                    const scheduleError = await scheduleResponse.json();
+                    console.warn('⚠️ Schedule setup failed:', scheduleError);
+                }
+            } catch (scheduleError) {
+                console.error('❌ Schedule error:', scheduleError);
+                // Don't throw - student was registered successfully
             }
+        }
+
+        // ✅ CLOSE MODAL AND SHOW NOTIFICATION
+        hideLoading();
+        closeModal('studentRegistrationModal');
+
+        // Reset button
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
+
+        // Determine which notification to show
+        if (scheduleAttempted && !scheduleSuccess) {
+            showAlert(`Student ${studentData.fullName} registered successfully, but schedule setup failed. You can set the schedule later.`, 'warning');
+        } else if (scheduleAttempted && scheduleSuccess) {
+            showAlert(`Student ${studentData.fullName} registered successfully with schedule!`, 'success');
         } else {
             showAlert(`Student ${studentData.fullName} registered successfully!`, 'success');
         }
 
-        closeModal('studentRegistrationModal');
-        await loadAllStudents();
-        await loadDashboard();
+        notificationShown = true;
+        console.log('Registration completed successfully');
+
+        // Reload data in background (don't await to prevent delays)
+        loadAllStudents().catch(err => console.error('Failed to reload students:', err));
+        loadDashboard().catch(err => console.error('Failed to reload dashboard:', err));
 
     } catch (error) {
-        console.error('Registration error:', error);
-        showAlert(error.message || 'Registration failed. Please try again.', 'error');
-    } finally {
         hideLoading();
+        console.error('Registration error:', error);
+
+        // Reset button
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
+
+        // Only show error notification if we haven't shown success
+        if (!notificationShown) {
+            showAlert(error.message || 'Registration failed. Please try again.', 'error');
+        }
     }
 }
 
@@ -1313,6 +1426,7 @@ async function submitDeleteStudent(event) {
     }
 }
 
+// ==================== SOFT DELETE (DEACTIVATE) ====================
 async function performSoftDelete() {
     const reason = document.getElementById('deleteReason').value.trim();
 
@@ -1321,14 +1435,105 @@ async function performSoftDelete() {
         return;
     }
 
-    const confirmed = confirm(
-        `Are you sure you want to DEACTIVATE ${currentManagementStudent.name}?\n\n` +
-        `This will:\n• Set status to INACTIVE\n• Release badge for reuse\n• Preserve all historical data`
-    );
+    // Close the delete modal
+    closeModal('deleteStudentModal');
 
-    if (!confirmed) return;
+    // Show confirmation modal
+    showSoftDeleteConfirmation(reason);
+}
 
+function showSoftDeleteConfirmation(reason) {
+    const modal = document.getElementById('deleteConfirmationModal');
+    const content = document.getElementById('deleteConfirmationContent');
+    const confirmBtn = document.getElementById('confirmDeleteBtn');
+
+    content.innerHTML = `
+        <div class="confirm-entry-card soft-delete">
+            <div class="confirm-header">
+                <div class="confirm-icon warning">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                </div>
+                <h3>Confirm Deactivation</h3>
+                <p>This student will be safely deactivated without data loss</p>
+            </div>
+
+            <div class="confirm-details">
+                <div class="detail-row">
+                    <span class="detail-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                        Student
+                    </span>
+                    <span class="detail-value">${currentManagementStudent.name}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                        Badge ID
+                    </span>
+                    <span class="detail-value"><span class="badge-number">${currentManagementStudent.badge}</span></span>
+                </div>
+                <div class="detail-row vertical">
+                    <span class="detail-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                            <polyline points="10 9 9 9 8 9"></polyline>
+                        </svg>
+                        Reason
+                    </span>
+                    <span class="detail-value reason">${reason}</span>
+                </div>
+            </div>
+
+            <div class="confirm-warning">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <div class="confirm-warning-content">
+                    <strong>This will:</strong>
+                    <ul>
+                        <li>Set student status to <strong>INACTIVE</strong></li>
+                        <li>Release badge <strong>${currentManagementStudent.badge}</strong> for reuse</li>
+                        <li>Preserve all historical data and records</li>
+                        <li>Allow reactivation in the future if needed</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Update button
+    confirmBtn.textContent = 'Yes, Deactivate Student';
+    confirmBtn.className = 'btn btn-warning';
+
+    // Store data
+    modal.dataset.reason = reason;
+    modal.dataset.deleteType = 'soft';
+
+    showModal('deleteConfirmationModal');
+}
+
+async function executeSoftDelete() {
+    const modal = document.getElementById('deleteConfirmationModal');
+    const reason = modal.dataset.reason;
+
+    closeModal('deleteConfirmationModal');
     showLoading();
+
     try {
         const response = await fetch(`${API_BASE_URL}/admin/students/${currentManagementStudent.id}/deactivate`, {
             method: 'PUT',
@@ -1340,8 +1545,7 @@ async function performSoftDelete() {
         });
 
         if (response.ok) {
-            showAlert(`✅ Student ${currentManagementStudent.name} has been deactivated successfully!`, 'success');
-            closeModal('deleteStudentModal');
+            showAlert(`Student ${currentManagementStudent.name} has been deactivated successfully!`, 'success');
             await loadAllStudents();
             await loadDashboard();
         } else {
@@ -1355,6 +1559,7 @@ async function performSoftDelete() {
     }
 }
 
+// ==================== HARD DELETE (PERMANENT) ====================
 async function performHardDelete() {
     const confirmCheckbox = document.getElementById('confirmPermanentDelete');
 
@@ -1363,22 +1568,128 @@ async function performHardDelete() {
         return;
     }
 
-    const typedBadge = prompt(`To confirm permanent deletion, type the badge number: ${currentManagementStudent.badge}`);
+    // Close the delete modal
+    closeModal('deleteStudentModal');
+
+    // Show badge verification modal
+    showHardDeleteConfirmation();
+}
+
+function showHardDeleteConfirmation() {
+    const modal = document.getElementById('deleteConfirmationModal');
+    const content = document.getElementById('deleteConfirmationContent');
+    const confirmBtn = document.getElementById('confirmDeleteBtn');
+
+    content.innerHTML = `
+        <div class="confirm-entry-card hard-delete">
+            <div class="confirm-header critical">
+                <div class="confirm-icon danger">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </div>
+                <h3>⚠️ PERMANENT DELETION</h3>
+                <p>This action cannot be undone or recovered</p>
+            </div>
+
+            <div class="confirm-details">
+                <div class="detail-row">
+                    <span class="detail-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                        Student
+                    </span>
+                    <span class="detail-value">${currentManagementStudent.name}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                        Badge ID
+                    </span>
+                    <span class="detail-value"><span class="badge-number">${currentManagementStudent.badge}</span></span>
+                </div>
+            </div>
+
+            <div class="confirm-warning critical">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                <div class="confirm-warning-content">
+                    <strong>🚨 CRITICAL WARNING</strong>
+                    <p>This will permanently delete:</p>
+                    <ul>
+                        <li><strong>Student profile</strong> and all information</li>
+                        <li><strong>ALL attendance records</strong> (complete history)</li>
+                        <li><strong>ALL task entries</strong> and logs</li>
+                        <li><strong>Complete audit trail</strong></li>
+                    </ul>
+                    <p style="margin-top: 0.75rem;">
+                        <strong style="color: var(--error-color);">THIS CANNOT BE RECOVERED!</strong>
+                    </p>
+                </div>
+            </div>
+
+            <div class="badge-verification-section">
+                <div class="form-group">
+                    <label for="confirmBadgeInput">
+                        Type badge number <span class="badge-highlight">${currentManagementStudent.badge}</span> to confirm deletion:
+                    </label>
+                    <input
+                        type="text"
+                        id="confirmBadgeInput"
+                        placeholder="Enter badge number"
+                        maxlength="4"
+                        autocomplete="off"
+                        oninput="this.value = this.value.replace(/\\D/g, '').slice(0, 4)"
+                    >
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Update button
+    confirmBtn.textContent = 'Yes, Permanently Delete';
+    confirmBtn.className = 'btn btn-error';
+
+    // Store data
+    modal.dataset.deleteType = 'hard';
+
+    showModal('deleteConfirmationModal');
+
+    // Focus on input after modal animation
+    setTimeout(() => {
+        const input = document.getElementById('confirmBadgeInput');
+        if (input) input.focus();
+    }, 300);
+}
+
+async function executeHardDelete() {
+    const typedBadge = document.getElementById('confirmBadgeInput').value.trim();
 
     if (typedBadge !== currentManagementStudent.badge) {
         showAlert('Badge number does not match. Deletion cancelled.', 'error');
         return;
     }
 
+    closeModal('deleteConfirmationModal');
     showLoading();
+
     try {
         const response = await fetch(`${API_BASE_URL}/admin/students/${currentManagementStudent.id}`, {
             method: 'DELETE'
         });
 
         if (response.ok) {
-            showAlert(`🗑️ Student ${currentManagementStudent.name} has been permanently deleted.`, 'info');
-            closeModal('deleteStudentModal');
+            showAlert(`Student ${currentManagementStudent.name} has been permanently deleted`, 'info');
             await loadAllStudents();
             await loadDashboard();
         } else {
@@ -1389,6 +1700,17 @@ async function performHardDelete() {
         showAlert('Failed to delete student. Please try again.', 'error');
     } finally {
         hideLoading();
+    }
+}
+
+function executeDeleteAction() {
+    const modal = document.getElementById('deleteConfirmationModal');
+    const deleteType = modal.dataset.deleteType;
+
+    if (deleteType === 'hard') {
+        executeHardDelete();
+    } else {
+        executeSoftDelete();
     }
 }
 
@@ -2268,7 +2590,7 @@ async function submitTimeCorrection(event) {
         return;
     }
 
-    // Disable submit button to prevent double-click
+    // Disable submit button
     const submitBtn = document.querySelector('#timeCorrectionForm button[type="submit"]');
     const originalText = submitBtn.innerHTML;
     submitBtn.disabled = true;
@@ -2287,15 +2609,15 @@ async function submitTimeCorrection(event) {
             })
         });
 
+        hideLoading();
+
         if (response.ok) {
-            showAlert('✅ Time correction applied successfully!', 'success');
-
-            // Close modal immediately
+            // CLOSE MODAL IMMEDIATELY, THEN SHOW NOTIFICATION
             closeModal('timeCorrectionModal');
-
-            // Reset form and state
             document.getElementById('timeCorrectionForm').reset();
             currentCorrectionRecord = null;
+
+            showAlert('Time correction applied successfully!', 'success');
 
             // Reload data in background
             await Promise.all([
@@ -2303,7 +2625,6 @@ async function submitTimeCorrection(event) {
                 loadNotifications(),
                 loadDashboard()
             ]);
-
         } else {
             const data = await response.json();
             showAlert(data.message || 'Correction failed', 'error');
@@ -2313,14 +2634,13 @@ async function submitTimeCorrection(event) {
             submitBtn.innerHTML = originalText;
         }
     } catch (error) {
+        hideLoading();
         console.error('Correction error:', error);
         showAlert('Correction failed. Please try again.', 'error');
 
         // Re-enable button on error
         submitBtn.disabled = false;
         submitBtn.innerHTML = originalText;
-    } finally {
-        hideLoading();
     }
 }
 
@@ -2398,6 +2718,469 @@ async function getRecordById(recordId) {
     } catch (error) {
         console.error('Failed to get record:', error);
         return null;
+    }
+}
+
+// ==================== MANUAL ATTENDANCE ENTRY ====================
+
+/**
+ * Show manual attendance entry modal
+ */
+function showManualEntryModal() {
+    // Reset form
+    document.getElementById('manualEntryForm').reset();
+    document.getElementById('manualIdBadge').value = '';
+    document.getElementById('manualTimeIn').value = '';
+    document.getElementById('manualTimeOut').value = '';
+    document.getElementById('manualTasks').value = '';
+    document.getElementById('manualReason').value = '';
+
+    // Set default time-in to current time
+    const now = new Date();
+    const timeString = now.toISOString().slice(0, 16); // Format: YYYY-MM-DDTHH:mm
+    document.getElementById('manualTimeIn').value = timeString;
+
+    // Clear validation
+    document.getElementById('manualBadgeValidation').innerHTML = '';
+
+    showModal('manualEntryModal');
+}
+
+/**
+ * Validate badge for manual entry
+ */
+async function validateManualBadge(badgeId) {
+    const validationDiv = document.getElementById('manualBadgeValidation');
+
+    if (!badgeId || badgeId.length !== 4) {
+        validationDiv.innerHTML = '';
+        return false;
+    }
+
+    validationDiv.innerHTML = '<div class="validation-message checking">Checking student...</div>';
+
+    try {
+        // Try multiple endpoints to find the student
+        let student = null;
+
+        // First try: Check by badge directly
+        try {
+            const badgeResponse = await fetch(`${API_BASE_URL}/students/badge/${badgeId}`);
+            if (badgeResponse.ok) {
+                student = await badgeResponse.json();
+            }
+        } catch (e) {
+            console.log('Badge endpoint not available, trying alternative...');
+        }
+
+        // Second try: Search in all students list
+        if (!student) {
+            const allStudentsResponse = await fetch(`${API_BASE_URL}/students/all`);
+            if (allStudentsResponse.ok) {
+                const allStudents = await allStudentsResponse.json();
+                student = allStudents.find(s => s.idBadge === badgeId);
+            }
+        }
+
+        if (student) {
+            validationDiv.innerHTML = `
+                <div class="validation-message available">
+                    ✓ Student Found: <strong>${student.fullName}</strong>
+                    <br><small>School: ${student.school || 'N/A'}</small>
+                    <br><small>Status: ${student.status || 'ACTIVE'}</small>
+                </div>
+            `;
+            return true;
+        } else {
+            validationDiv.innerHTML = '<div class="validation-message unavailable">✗ Student not found with badge: ' + badgeId + '</div>';
+            return false;
+        }
+    } catch (error) {
+        console.error('Validation error:', error);
+        validationDiv.innerHTML = '<div class="validation-message checking">Unable to verify student</div>';
+        return false;
+    }
+}
+
+/**
+ * Toggle time-out and tasks fields
+ */
+function toggleCompleteEntry() {
+    const isComplete = document.getElementById('entryTypeComplete').checked;
+    const timeOutGroup = document.getElementById('manualTimeOutGroup');
+    const tasksGroup = document.getElementById('manualTasksGroup');
+
+    if (isComplete) {
+        timeOutGroup.style.display = 'block';
+        tasksGroup.style.display = 'block';
+        document.getElementById('manualTimeOut').required = true;
+    } else {
+        timeOutGroup.style.display = 'none';
+        tasksGroup.style.display = 'none';
+        document.getElementById('manualTimeOut').required = false;
+        document.getElementById('manualTimeOut').value = '';
+        document.getElementById('manualTasks').value = '';
+    }
+}
+
+/**
+ * Submit manual attendance entry
+ */
+async function submitManualEntry(event) {
+    event.preventDefault();
+
+    const idBadge = document.getElementById('manualIdBadge').value.trim();
+    const timeIn = document.getElementById('manualTimeIn').value;
+    const timeOut = document.getElementById('manualTimeOut').value;
+    const tasks = document.getElementById('manualTasks').value.trim();
+    const reason = document.getElementById('manualReason').value.trim();
+    const isComplete = document.getElementById('entryTypeComplete').checked;
+
+    // Validation
+    if (!/^\d{4}$/.test(idBadge)) {
+        showAlert('ID badge must be exactly 4 digits', 'error');
+        return;
+    }
+
+    if (!timeIn) {
+        showAlert('Time-in is required', 'error');
+        return;
+    }
+
+    if (isComplete && !timeOut) {
+        showAlert('Time-out is required for complete entry', 'error');
+        return;
+    }
+
+    if (!reason) {
+        showAlert('Admin reason is required', 'error');
+        return;
+    }
+
+    // Validate time-out is after time-in
+    if (timeOut && new Date(timeOut) <= new Date(timeIn)) {
+        showAlert('Time-out must be after time-in', 'error');
+        return;
+    }
+
+    // Prepare request payload
+    const payload = {
+        idBadge: idBadge,
+        timeIn: timeIn,
+        adminReason: reason
+    };
+
+    // Add optional fields if complete entry
+    if (isComplete && timeOut) {
+        payload.timeOut = timeOut;
+        if (tasks) {
+            payload.tasksCompleted = tasks;
+        }
+    }
+
+    // Show confirmation modal instead of alert
+    showManualEntryConfirmation(payload, isComplete);
+}
+
+/**
+ * Show professional confirmation modal
+ */
+async function showManualEntryConfirmation(payload, isComplete) {
+    const modal = document.getElementById('manualEntryConfirmModal');
+    const content = document.getElementById('manualEntryConfirmContent');
+
+    // Get student info for display
+    let studentName = 'Unknown';
+    try {
+        const response = await fetch(`${API_BASE_URL}/students/all`);
+        if (response.ok) {
+            const students = await response.json();
+            const student = students.find(s => s.idBadge === payload.idBadge);
+            if (student) studentName = student.fullName;
+        }
+    } catch (e) {
+        console.error('Failed to get student name:', e);
+    }
+
+    // Calculate hours if complete entry
+    let calculatedHours = 0;
+    if (isComplete && payload.timeOut) {
+        const timeInDate = new Date(payload.timeIn);
+        const timeOutDate = new Date(payload.timeOut);
+        calculatedHours = (timeOutDate - timeInDate) / (1000 * 60 * 60);
+    }
+
+    content.innerHTML = `
+        <div class="confirm-entry-card ${isComplete ? 'complete' : 'partial'}">
+            <div class="confirm-header">
+                <div class="confirm-icon ${isComplete ? 'success' : 'info'}">
+                    ${isComplete ?
+                        '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>' :
+                        '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>'
+                    }
+                </div>
+                <h3>${isComplete ? 'Complete Attendance Entry' : 'Time-In Entry'}</h3>
+                <p>${isComplete ? 'Create a finished attendance record' : 'Student will need to time-out later'}</p>
+            </div>
+
+            <div class="confirm-details">
+                <div class="detail-row">
+                    <span class="detail-label">👤 Student:</span>
+                    <span class="detail-value"><strong>${studentName}</strong></span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">🔖 Badge ID:</span>
+                    <span class="detail-value"><span class="badge-number">${payload.idBadge}</span></span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">⏰ Time In:</span>
+                    <span class="detail-value">${formatDateTime(payload.timeIn)}</span>
+                </div>
+                ${payload.timeOut ? `
+                    <div class="detail-row">
+                        <span class="detail-label">⏰ Time Out:</span>
+                        <span class="detail-value">${formatDateTime(payload.timeOut)}</span>
+                    </div>
+                    <div class="detail-row highlight">
+                        <span class="detail-label">⏱️ Total Hours:</span>
+                        <span class="detail-value"><strong>${formatHoursMinutes(calculatedHours)}</strong></span>
+                    </div>
+                ` : ''}
+                ${payload.tasksCompleted ? `
+                    <div class="detail-row vertical">
+                        <span class="detail-label">📝 Tasks:</span>
+                        <span class="detail-value tasks">${payload.tasksCompleted}</span>
+                    </div>
+                ` : ''}
+                <div class="detail-row vertical">
+                    <span class="detail-label">📄 Reason:</span>
+                    <span class="detail-value reason">${payload.adminReason}</span>
+                </div>
+            </div>
+
+            <div class="confirm-warning">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                <div>
+                    <strong>This action will be permanently logged</strong>
+                    <p>Manual entries are recorded with your admin account for audit purposes</p>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Store payload for submission
+    modal.dataset.payload = JSON.stringify(payload);
+
+    showModal('manualEntryConfirmModal');
+}
+
+/**
+ * Execute the manual entry after confirmation
+ */
+async function executeManualEntry() {
+    const modal = document.getElementById('manualEntryConfirmModal');
+    const payload = JSON.parse(modal.dataset.payload);
+
+    closeModal('manualEntryConfirmModal');
+    showLoading();
+/**
+ * Execute the manual entry after confirmation
+ */
+async function executeManualEntry() {
+    const modal = document.getElementById('manualEntryConfirmModal');
+    const payload = JSON.parse(modal.dataset.payload);
+
+    closeModal('manualEntryConfirmModal');
+    showLoading();
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin/attendance/manual-entry`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to create manual entry');
+        }
+
+        const result = await response.json();
+
+        // Show success modal instead of alert
+        showManualEntrySuccess(result);
+
+        closeModal('manualEntryModal');
+
+        // Refresh relevant data
+        await Promise.all([
+            loadDashboard(),
+            currentTab === 'attendance' ? loadAttendanceRecordsNew(
+                document.getElementById('customStartDate').value || formatDate(new Date()),
+                document.getElementById('customEndDate').value || formatDate(new Date())
+            ) : Promise.resolve()
+        ]);
+
+    } catch (error) {
+        console.error('Manual entry error:', error);
+        showManualEntryError(error.message || 'Failed to create manual entry');
+    } finally {
+        hideLoading();
+    }
+}
+
+/**
+ * Show success modal
+ */
+function showManualEntrySuccess(result) {
+    const modal = document.getElementById('manualEntryResultModal');
+    const content = document.getElementById('manualEntryResultContent');
+
+    content.innerHTML = `
+        <div class="result-card success">
+            <div class="result-icon">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+            </div>
+            <h3>✅ Manual Entry Created Successfully!</h3>
+            <p>The attendance record has been logged in the system</p>
+
+            <div class="result-details">
+                <div class="result-detail-item">
+                    <span class="result-label">Student:</span>
+                    <span class="result-value"><strong>${result.studentName || 'Unknown'}</strong></span>
+                </div>
+                <div class="result-detail-item">
+                    <span class="result-label">Status:</span>
+                    <span class="result-value">
+                        <span class="status-badge status-${result.status?.toLowerCase().replace('_', '-')}">${result.status || 'RECORDED'}</span>
+                    </span>
+                </div>
+                <div class="result-detail-item">
+                    <span class="result-label">Hours Logged:</span>
+                    <span class="result-value"><strong>${formatHoursMinutes(result.totalHours || 0)}</strong></span>
+                </div>
+                <div class="result-detail-item">
+                    <span class="result-label">Date:</span>
+                    <span class="result-value">${formatDate(result.attendanceDate || new Date())}</span>
+                </div>
+            </div>
+
+            <div class="result-footer">
+                <button class="btn btn-primary" onclick="closeModal('manualEntryResultModal')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    Done
+                </button>
+            </div>
+        </div>
+    `;
+
+    showModal('manualEntryResultModal');
+}
+
+/**
+ * Show error modal
+ */
+function showManualEntryError(errorMessage) {
+    const modal = document.getElementById('manualEntryResultModal');
+    const content = document.getElementById('manualEntryResultContent');
+
+    content.innerHTML = `
+        <div class="result-card error">
+            <div class="result-icon">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+            </div>
+            <h3>❌ Failed to Create Entry</h3>
+            <p>The manual attendance entry could not be created</p>
+
+            <div class="result-error-message">
+                <strong>Error Details:</strong>
+                <p>${errorMessage}</p>
+            </div>
+
+            <div class="result-footer">
+                <button class="btn btn-secondary" onclick="closeModal('manualEntryResultModal')">
+                    Close
+                </button>
+                <button class="btn btn-primary" onclick="closeModal('manualEntryResultModal'); showManualEntryModal()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"></path>
+                    </svg>
+                    Try Again
+                </button>
+            </div>
+        </div>
+    `;
+
+    showModal('manualEntryResultModal');
+}
+}
+
+/**
+ * Set quick time presets
+ */
+function setQuickTime(type, preset) {
+    const now = new Date();
+    let targetTime;
+
+    switch (preset) {
+        case 'now':
+            targetTime = now;
+            break;
+        case '6am':
+            targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 6, 0, 0);
+            break;
+        case '8am':
+            targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0, 0);
+            break;
+        case '10am':
+            targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 10, 0, 0);
+            break;
+        case '12pm':
+            targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
+            break;
+        case '3pm':
+            targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 15, 0, 0);
+            break;
+        case '5pm':
+            targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 17, 0, 0);
+            break;
+        case '7pm':
+            targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 19, 0, 0);
+            break;
+        case '9pm':
+            targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 21, 0, 0);
+            break;
+        default:
+            targetTime = now;
+    }
+
+    // Format to YYYY-MM-DDTHH:mm for datetime-local input
+    const year = targetTime.getFullYear();
+    const month = String(targetTime.getMonth() + 1).padStart(2, '0');
+    const day = String(targetTime.getDate()).padStart(2, '0');
+    const hours = String(targetTime.getHours()).padStart(2, '0');
+    const minutes = String(targetTime.getMinutes()).padStart(2, '0');
+
+    const timeString = `${year}-${month}-${day}T${hours}:${minutes}`;
+
+    if (type === 'in') {
+        document.getElementById('manualTimeIn').value = timeString;
+    } else if (type === 'out') {
+        document.getElementById('manualTimeOut').value = timeString;
     }
 }
 
@@ -3492,21 +4275,15 @@ async function loadNotifications() {
 }
 
 function updateNotificationBadge(count) {
-    const badge = document.getElementById('notificationBadge');
-    if (count > 0) {
-        badge.textContent = count;
-        badge.classList.add('show');
-    } else {
-        badge.classList.remove('show');
-    }
-}
-
-function toggleNotificationPanel() {
-    const panel = document.getElementById('notificationPanel');
-    panel.classList.toggle('open');
-
-    if (panel.classList.contains('open')) {
-        displayNotifications();
+    const navBadge = document.getElementById('navNotificationBadge');
+    if (navBadge) {
+        if (count > 0) {
+            navBadge.textContent = count;
+            navBadge.style.display = 'inline-flex';
+        } else {
+            navBadge.textContent = '0';
+            navBadge.style.display = 'none';
+        }
     }
 }
 
@@ -3663,6 +4440,222 @@ async function markAllNotificationsRead() {
     }
 }
 
+// ==================== NOTIFICATIONS TAB ====================
+
+async function loadNotificationsTab() {
+    showLoading();
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin/notifications`);
+        if (response.ok) {
+            const notifications = await response.json();
+            displayNotificationsTab(notifications);
+            updateNotificationTabStats(notifications);
+        } else {
+            document.getElementById('notificationsTabContent').innerHTML = `
+                <div class="empty-state-modern">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <h3>Failed to load notifications</h3>
+                    <p>Please try refreshing the page</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Failed to load notifications:', error);
+        showAlert('Failed to load notifications', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function displayNotificationsTab(notifications) {
+    const container = document.getElementById('notificationsTabContent');
+
+    if (notifications.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state-modern">
+                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+                <h3>✅ All Clear!</h3>
+                <p>You don't have any notifications</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = notifications.map(notification => {
+        const icon = getNotificationIcon(notification.notificationType);
+        const isUnread = !notification.isRead;
+
+        return `
+            <div class="notification-item-tab ${isUnread ? 'unread' : 'read'}"
+                 data-read="${notification.isRead}"
+                 onclick="markNotificationReadTab(${notification.id})">
+                <div class="notification-icon-tab">${icon}</div>
+                <div class="notification-body-tab">
+                    <div class="notification-meta-tab">
+                        <span class="notification-type-tab">${notification.notificationType.replace('_', ' ')}</span>
+                        <span class="notification-time-tab">${formatTimeAgo(notification.createdAt)}</span>
+                    </div>
+                    <div class="notification-message-tab">${notification.message}</div>
+                    ${isUnread ? `
+                        <button class="notification-mark-read-btn" onclick="event.stopPropagation(); markNotificationReadTab(${notification.id})">
+                            Mark as Read
+                        </button>
+                    ` : ''}
+                </div>
+                <button class="notification-delete-btn-tab" onclick="event.stopPropagation(); deleteNotificationTab(${notification.id})" title="Delete">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+
+function updateNotificationTabStats(notifications) {
+    const total = notifications.length;
+    const unread = notifications.filter(n => !n.isRead).length;
+    const read = total - unread;
+
+    document.getElementById('sidebarNotifTotal').textContent = total;
+    document.getElementById('sidebarNotifUnread').textContent = unread;
+    document.getElementById('sidebarNotifRead').textContent = read;
+
+    document.getElementById('filterAllCountTab').textContent = total;
+    document.getElementById('filterUnreadCountTab').textContent = unread;
+    document.getElementById('filterReadCountTab').textContent = read;
+}
+
+function filterNotificationsTab(filter) {
+    // Update active filter chip
+    document.querySelectorAll('#notifications .filter-chip').forEach(chip => {
+        chip.classList.remove('active');
+    });
+    document.querySelector(`#notifications [data-filter="${filter}"]`).classList.add('active');
+
+    // Filter notification items
+    const items = document.querySelectorAll('.notification-item-tab');
+    items.forEach(item => {
+        const isRead = item.getAttribute('data-read') === 'true';
+
+        if (filter === 'all') {
+            item.style.display = 'flex';
+        } else if (filter === 'unread') {
+            item.style.display = isRead ? 'none' : 'flex';
+        } else if (filter === 'read') {
+            item.style.display = isRead ? 'flex' : 'none';
+        }
+    });
+}
+
+async function markNotificationReadTab(notificationId) {
+    try {
+        await fetch(`${API_BASE_URL}/admin/notifications/${notificationId}/read`, {
+            method: 'PUT'
+        });
+        await loadNotifications(); // Update badge
+        await loadNotificationsTab(); // Refresh list
+    } catch (error) {
+        console.error('Failed to mark notification as read:', error);
+    }
+}
+
+async function markAllNotificationsReadTab() {
+    try {
+        await fetch(`${API_BASE_URL}/admin/notifications/read-all`, {
+            method: 'PUT'
+        });
+        showAlert('All notifications marked as read', 'success');
+        await loadNotifications();
+        await loadNotificationsTab();
+    } catch (error) {
+        showAlert('Failed to mark notifications as read', 'error');
+    }
+}
+
+async function deleteNotificationTab(notificationId) {
+    if (!confirm('Delete this notification?')) return;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin/notifications/${notificationId}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            showAlert('Notification deleted', 'success');
+            await loadNotifications();
+            await loadNotificationsTab();
+        } else {
+            showAlert('Failed to delete notification', 'error');
+        }
+    } catch (error) {
+        console.error('Delete notification error:', error);
+        showAlert('Failed to delete notification', 'error');
+    }
+}
+
+async function clearReadNotificationsTab() {
+    if (!confirm('Delete all read notifications?')) return;
+
+    showLoading();
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin/notifications/clear-read`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            showAlert(`${result.deletedCount} read notifications cleared`, 'success');
+            await loadNotifications();
+            await loadNotificationsTab();
+        } else {
+            showAlert('Failed to clear read notifications', 'error');
+        }
+    } catch (error) {
+        console.error('Clear read notifications error:', error);
+        showAlert('Failed to clear read notifications', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function clearAllNotificationsTab() {
+    // Load current notification counts
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin/notifications`);
+        if (response.ok) {
+            const notifications = await response.json();
+            const total = notifications.length;
+            const unread = notifications.filter(n => !n.isRead).length;
+
+            document.getElementById('clearAllTotalCount').textContent = total;
+            document.getElementById('clearAllUnreadCount').textContent = unread;
+
+            // Clear the confirmation input
+            document.getElementById('clearAllConfirmInput').value = '';
+
+            showModal('clearAllNotificationsModal');
+
+            // Focus on input after modal animation
+            setTimeout(() => {
+                const input = document.getElementById('clearAllConfirmInput');
+                if (input) input.focus();
+            }, 300);
+        }
+    } catch (error) {
+        console.error('Failed to load notification counts:', error);
+        showAlert('Failed to load notification data', 'error');
+    }
+}
+
 // ==================== NOTIFICATION MANAGEMENT ====================
 
 /**
@@ -3765,16 +4758,45 @@ async function clearReadNotifications() {
  * Clear all notifications
  */
 async function clearAllNotifications() {
-    const confirmed = confirm(
-        '⚠️ WARNING: This will delete ALL notifications permanently.\n\n' +
-        'This action cannot be undone. Are you absolutely sure?'
-    );
-    if (!confirmed) return;
+    // Load current notification counts
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin/notifications`);
+        if (response.ok) {
+            const notifications = await response.json();
+            const total = notifications.length;
+            const unread = notifications.filter(n => !n.isRead).length;
 
-    const doubleConfirm = confirm('Final confirmation: Delete ALL notifications?');
-    if (!doubleConfirm) return;
+            document.getElementById('clearAllTotalCount').textContent = total;
+            document.getElementById('clearAllUnreadCount').textContent = unread;
 
+            // Clear the confirmation input
+            document.getElementById('clearAllConfirmInput').value = '';
+
+            showModal('clearAllNotificationsModal');
+
+            // Focus on input after modal animation
+            setTimeout(() => {
+                const input = document.getElementById('clearAllConfirmInput');
+                if (input) input.focus();
+            }, 300);
+        }
+    } catch (error) {
+        console.error('Failed to load notification counts:', error);
+        showAlert('Failed to load notification data', 'error');
+    }
+}
+
+async function executeClearAllNotifications() {
+    const typedText = document.getElementById('clearAllConfirmInput').value.trim().toUpperCase();
+
+    if (typedText !== 'DELETE ALL') {
+        showAlert('❌ Confirmation text does not match. Deletion cancelled.', 'error');
+        return;
+    }
+
+    closeModal('clearAllNotificationsModal');
     showLoading();
+
     try {
         const response = await fetch(`${API_BASE_URL}/admin/notifications/clear-all?confirm=true`, {
             method: 'DELETE'
@@ -3782,9 +4804,13 @@ async function clearAllNotifications() {
 
         if (response.ok) {
             const result = await response.json();
-            showAlert(`All notifications cleared (${result.deletedCount} deleted)`, 'info');
+            showAlert(`✅ All notifications cleared (${result.deletedCount} deleted)`, 'success');
             await loadNotifications();
-            displayNotifications();
+
+            // Check if we're on the notifications tab and reload it
+            if (currentTab === 'notifications') {
+                await loadNotificationsTab();
+            }
         } else {
             showAlert('Failed to clear all notifications', 'error');
         }
@@ -4224,4 +5250,4 @@ function startPeriodicRefresh() {
     }, 120000);
 }
 
-console.log('✅ TERA IT Admin Panel - Clean Version Loaded Successfully');
+console.log('TERA IT Admin Panel - Version 2.1.0 Loaded Successfully');
