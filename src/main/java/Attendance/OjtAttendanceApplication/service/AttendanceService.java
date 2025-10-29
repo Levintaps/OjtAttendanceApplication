@@ -23,7 +23,7 @@ public class AttendanceService {
     // Constants for business rules
     private static final int BREAK_DEDUCTION_THRESHOLD_HOURS = 5;
     private static final int BREAK_DEDUCTION_HOURS = 1;
-    private static final int ROUNDING_THRESHOLD_MINUTES = 40;
+    private static final int ROUNDING_THRESHOLD_MINUTES = 55;
     private static final int REGULAR_HOURS_CAP = 8;
     private static final int MINIMUM_HOURS_BETWEEN_SESSIONS = 4;
 
@@ -355,7 +355,7 @@ public class AttendanceService {
             calculation.setBreakDeducted(true);
         }
 
-        // Apply 40-minute rounding rule
+        // Apply 55-minute rounding rule
         double roundedHours = applyRoundingRule(rawHours);
         calculation.setTotalHours(roundedHours);
 
@@ -412,15 +412,15 @@ public class AttendanceService {
     }
 
     /**
-     * Apply 40-minute rounding rule
-     * - 40+ minutes rounds up to next hour
-     * - Under 40 minutes rounds down
+     * Apply 55-minute rounding rule
+     * - 55+ minutes rounds up to next hour
+     * - Under 55 minutes rounds down
      */
     private double applyRoundingRule(double hours) {
         int wholeHours = (int) hours;
         double minutes = (hours - wholeHours) * 60;
 
-        if (minutes >= ROUNDING_THRESHOLD_MINUTES) {
+        if (minutes >= 55) {
             return wholeHours + 1.0;
         } else {
             return wholeHours;
@@ -797,20 +797,33 @@ public class AttendanceService {
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new RuntimeException("Student not found"));
 
-        if (student.getStatus() != StudentStatus.ACTIVE) {
-            throw new RuntimeException("Only active students can be marked as completed");
+        // Allow completion from ACTIVE or if already at 100% progress
+        if (student.getStatus() == StudentStatus.COMPLETED) {
+            throw new RuntimeException("Student is already marked as completed");
         }
 
+        if (student.getStatus() == StudentStatus.INACTIVE) {
+            throw new RuntimeException("Cannot complete an inactive student. Please reactivate them first.");
+        }
+
+        // Check if student is currently timed in
         Optional<AttendanceRecord> activeSession = attendanceRecordRepository
                 .findActiveSessionByStudent(student);
 
         if (activeSession.isPresent()) {
-            throw new RuntimeException("Cannot complete student while they are currently timed in");
+            throw new RuntimeException("Cannot complete student while they are currently timed in. Please time them out first.");
+        }
+
+        // Optional: Verify they've reached required hours (if you want to enforce this)
+        if (student.getRequiredHours() != null &&
+             student.getTotalAccumulatedHours() < student.getRequiredHours()) {
+             throw new RuntimeException("Student has not yet reached required hours. " +
+                 "Current: " + student.getTotalAccumulatedHours() + " / Required: " + student.getRequiredHours());
         }
 
         student.setStatus(StudentStatus.COMPLETED);
         student.setCompletionDate(LocalDateTime.now());
-        // Keep the badge for historical records instead of nullifying
+        // Keep the badge for historical records
 
         Student updatedStudent = studentRepository.save(student);
 
