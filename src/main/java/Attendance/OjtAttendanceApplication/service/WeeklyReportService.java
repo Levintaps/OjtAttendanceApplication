@@ -51,33 +51,37 @@ public class WeeklyReportService {
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("hh:mm a");
 
     /**
+     * FIXED: Get OJT start date based on FIRST TIME-IN (first attendance record)
+     */
+    private LocalDate getFirstAttendanceDate(Student student) {
+        List<AttendanceRecord> records = attendanceRecordRepository
+                .findByStudentOrderByAttendanceDateDesc(student);
+
+        if (records.isEmpty()) {
+            throw new RuntimeException("No attendance records found. Please complete at least one attendance session first.");
+        }
+
+        // Get the earliest attendance date (first time-in)
+        return records.stream()
+                .map(AttendanceRecord::getAttendanceDate)
+                .min(LocalDate::compareTo)
+                .orElseThrow(() -> new RuntimeException("Unable to determine OJT start date"));
+    }
+
+    /**
      * Generate weekly report for specific week number (CALENDAR WEEKS: Monday-Sunday)
+     * Week calculation starts from the MONDAY of the week containing the first time-in
      */
     public byte[] generateWeeklyReportByWeekNumber(String idBadge, Integer weekNumber) {
         Student student = studentRepository.findByIdBadge(idBadge)
                 .orElseThrow(() -> new RuntimeException("Student not found"));
 
-        // FIXED: Get OJT start date from first attendance record if not manually set
-        LocalDate ojtStartDate = student.getOjtStartDate();
+        // FIXED: Get first attendance date (first time-in)
+        LocalDate firstAttendanceDate = getFirstAttendanceDate(student);
 
-        if (ojtStartDate == null) {
-            // Get first attendance record date
-            List<AttendanceRecord> records = attendanceRecordRepository
-                    .findByStudentOrderByAttendanceDateDesc(student);
-
-            if (records.isEmpty()) {
-                throw new RuntimeException("No attendance records found. Please complete at least one attendance session first.");
-            }
-
-            // Get the earliest attendance date
-            ojtStartDate = records.stream()
-                    .map(AttendanceRecord::getAttendanceDate)
-                    .min(LocalDate::compareTo)
-                    .orElseThrow(() -> new RuntimeException("Unable to determine OJT start date"));
-        }
-
-        // Calculate the Monday ON OR AFTER the OJT start date
-        LocalDate firstMonday = ojtStartDate.with(TemporalAdjusters.nextOrSame(DayOfWeek.MONDAY));
+        // Get the Monday of the week containing the first attendance
+        // Use previousOrSame so if first attendance is Monday, it uses that Monday
+        LocalDate firstMonday = firstAttendanceDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
 
         // Calculate the target week's Monday and Sunday
         LocalDate weekStartDate = firstMonday.plusWeeks(weekNumber - 1);
@@ -99,45 +103,24 @@ public class WeeklyReportService {
         Student student = studentRepository.findByIdBadge(idBadge)
                 .orElseThrow(() -> new RuntimeException("Student not found"));
 
-        // Calculate week number based on OJT start date and calendar weeks
-        LocalDate ojtStartDate = getActualOjtStartDate(student);
-        Integer weekNumber = calculateCalendarWeekNumber(ojtStartDate, startDate);
+        // Calculate week number based on first attendance date
+        LocalDate firstAttendanceDate = getFirstAttendanceDate(student);
+        Integer weekNumber = calculateCalendarWeekNumber(firstAttendanceDate, startDate);
 
         return generateWeeklyReportPDF(idBadge, startDate, endDate, weekNumber);
     }
 
-    private LocalDate getActualOjtStartDate(Student student) {
-        LocalDate ojtStartDate = student.getOjtStartDate();
-
-        if (ojtStartDate == null) {
-            // Get first attendance record date
-            List<AttendanceRecord> records = attendanceRecordRepository
-                    .findByStudentOrderByAttendanceDateDesc(student);
-
-            if (records.isEmpty()) {
-                throw new RuntimeException("No attendance records found");
-            }
-
-            ojtStartDate = records.stream()
-                    .map(AttendanceRecord::getAttendanceDate)
-                    .min(LocalDate::compareTo)
-                    .orElse(student.getRegistrationDate().toLocalDate());
-        }
-
-        return ojtStartDate;
-    }
-
     /**
-     * Calculate week number based on calendar weeks (Monday-Sunday)
+     * FIXED: Calculate week number based on FIRST ATTENDANCE DATE (not registration)
      *
-     * Example: If student starts on Wednesday Oct 16:
-     * - Week 1: Monday Oct 14 - Sunday Oct 20 (student joined Wed)
-     * - Week 2: Monday Oct 21 - Sunday Oct 27
-     * - Week 3: Monday Oct 28 - Sunday Nov 3
+     * Example: If student first timed in on Wednesday Oct 29:
+     * - Week 1: Monday Oct 27 - Sunday Nov 2 (student started Wed, but week starts Mon)
+     * - Week 2: Monday Nov 3 - Sunday Nov 9
+     * - Week 3: Monday Nov 10 - Sunday Nov 16
      */
-    private Integer calculateCalendarWeekNumber(LocalDate ojtStartDate, LocalDate targetDate) {
-        // Get the Monday of the week containing OJT start date
-        LocalDate firstMonday = ojtStartDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+    private Integer calculateCalendarWeekNumber(LocalDate firstAttendanceDate, LocalDate targetDate) {
+        // Get the Monday of the week containing first attendance
+        LocalDate firstMonday = firstAttendanceDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
 
         // Get the Monday of the target week
         LocalDate targetMonday = targetDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
@@ -149,17 +132,17 @@ public class WeeklyReportService {
     }
 
     /**
-     * Calculate total available calendar weeks for a student
+     * FIXED: Calculate total available calendar weeks based on FIRST ATTENDANCE
      */
-    public Integer calculateTotalAvailableWeeks(LocalDate ojtStartDate) {
-        if (ojtStartDate == null) {
+    public Integer calculateTotalAvailableWeeks(LocalDate firstAttendanceDate) {
+        if (firstAttendanceDate == null) {
             return 0;
         }
 
         LocalDate today = LocalDate.now();
 
-        // Get Monday of OJT start week (on or after OJT start)
-        LocalDate firstMonday = ojtStartDate.with(TemporalAdjusters.nextOrSame(DayOfWeek.MONDAY));
+        // Get Monday of first attendance week
+        LocalDate firstMonday = firstAttendanceDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
 
         // Get Monday of current week
         LocalDate currentMonday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
@@ -171,11 +154,11 @@ public class WeeklyReportService {
     }
 
     /**
-     * Get date range for a specific week number
+     * FIXED: Get date range for a specific week number based on FIRST ATTENDANCE
      */
-    public Map<String, LocalDate> getWeekDateRange(LocalDate ojtStartDate, Integer weekNumber) {
-        // Get Monday of first week
-        LocalDate firstMonday = ojtStartDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+    public Map<String, LocalDate> getWeekDateRange(LocalDate firstAttendanceDate, Integer weekNumber) {
+        // Get Monday of first attendance week
+        LocalDate firstMonday = firstAttendanceDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
 
         // Calculate target week
         LocalDate weekStart = firstMonday.plusWeeks(weekNumber - 1);
@@ -191,13 +174,14 @@ public class WeeklyReportService {
 
     /**
      * Main PDF generation method
+     * FIXED: Only includes days with actual attendance (no absent days)
      */
     private byte[] generateWeeklyReportPDF(String idBadge, LocalDate startDate, LocalDate endDate, Integer weekNumber) {
         // Get student
         Student student = studentRepository.findByIdBadge(idBadge)
                 .orElseThrow(() -> new RuntimeException("Student not found"));
 
-        // Get attendance records for the week (only days with attendance)
+        // FIXED: Get attendance records for the week (ONLY days with attendance - no absent days)
         List<AttendanceRecord> records = attendanceRecordRepository
                 .findByStudentAndDateRange(student, startDate, endDate);
 
@@ -214,8 +198,8 @@ public class WeeklyReportService {
                 .sum();
 
         // Calculate CUMULATIVE TOTAL up to and including this week
-        LocalDate ojtStartDate = student.getEffectiveStartDate();
-        LocalDate firstMonday = ojtStartDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate firstAttendanceDate = getFirstAttendanceDate(student);
+        LocalDate firstMonday = firstAttendanceDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         LocalDate cumulativeEndDate = endDate; // End of current week
 
         List<AttendanceRecord> cumulativeRecords = attendanceRecordRepository
@@ -236,6 +220,7 @@ public class WeeklyReportService {
 
     /**
      * Create the PDF document
+     * FIXED: Only shows days with actual attendance
      */
     private byte[] createPDF(Student student, Map<LocalDate, List<AttendanceRecord>> recordsByDate,
                              double weeklyTotal, double totalCompleted, double hoursRemaining,
@@ -294,13 +279,23 @@ public class WeeklyReportService {
             addTableHeader(table, "No. of\nHours");
             addTableHeader(table, "Task/Learning");
 
-            // Add records (only days with attendance)
-            List<LocalDate> sortedDates = new ArrayList<>(recordsByDate.keySet());
-            sortedDates.sort(Comparator.naturalOrder());
+            // FIXED: Add records (ONLY days with attendance - no absent days shown)
+            if (recordsByDate.isEmpty()) {
+                // If no attendance at all during this week
+                Cell noDataCell = new Cell(1, 5)
+                        .add(new Paragraph("No attendance recorded for this week"))
+                        .setTextAlignment(TextAlignment.CENTER)
+                        .setPadding(20)
+                        .setFontSize(10);
+                table.addCell(noDataCell);
+            } else {
+                List<LocalDate> sortedDates = new ArrayList<>(recordsByDate.keySet());
+                sortedDates.sort(Comparator.naturalOrder());
 
-            for (LocalDate date : sortedDates) {
-                List<AttendanceRecord> dayRecords = recordsByDate.get(date);
-                addDayRecords(table, date, dayRecords);
+                for (LocalDate date : sortedDates) {
+                    List<AttendanceRecord> dayRecords = recordsByDate.get(date);
+                    addDayRecords(table, date, dayRecords);
+                }
             }
 
             document.add(table);
@@ -363,7 +358,6 @@ public class WeeklyReportService {
         try {
             ClassPathResource imgFile = new ClassPathResource("static/images/concentrix-logo.png");
 
-            // Check if resource exists
             if (!imgFile.exists()) {
                 System.err.println("Logo file not found at: static/images/concentrix-logo.png");
                 addTextLogo(document);
@@ -374,7 +368,6 @@ public class WeeklyReportService {
             byte[] imageBytes = inputStream.readAllBytes();
             inputStream.close();
 
-            // Create image from bytes
             Image logo = new Image(ImageDataFactory.create(imageBytes));
             logo.setWidth(200);
             logo.setAutoScale(true);
@@ -384,20 +377,15 @@ public class WeeklyReportService {
             document.add(logo);
 
         } catch (IOException e) {
-            // File not found or read error
             System.err.println("Failed to load logo image: " + e.getMessage());
             addTextLogo(document);
         } catch (Exception e) {
-            // Any other error (corrupt image, unsupported format, etc.)
             System.err.println("Failed to process logo image: " + e.getMessage());
             e.printStackTrace();
             addTextLogo(document);
         }
     }
 
-    /**
-     * Add text-based logo as fallback
-     */
     private void addTextLogo(Document document) {
         document.add(new Paragraph("CONCENTRIX")
                 .setTextAlignment(TextAlignment.CENTER)
