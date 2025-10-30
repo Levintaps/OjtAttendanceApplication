@@ -1623,7 +1623,7 @@
                 <div class="form-grid">
                     <div class="form-group">
                         <label for="regIdBadgeNew">ID Badge Number:</label>
-                        <input type="text" id="regIdBadgeNew" placeholder="4-digit ID" maxlength="4" required>
+                        <input type="text" id="regIdBadgeNew" placeholder="4-digit ID" maxlength="4" required oninput="this.value = this.value.replace(/\D/g, '').slice(0, 4); if(this.value.length === 4) { validateManualBadge(this.value); } else { document.getElementById('regBadgeValidation').innerHTML = ''; }">
                         <div id="regBadgeValidation"></div>
                     </div>
 
@@ -1888,7 +1888,7 @@
                            placeholder="Enter 4-digit ID"
                            maxlength="4"
                            required
-                           oninput="this.value = this.value.replace(/\D/g, '').slice(0, 4); if(this.value.length === 4) validateManualBadge(this.value);">
+                           oninput="this.value = this.value.replace(/\D/g, '').slice(0, 4); if(this.value.length === 4) { validateManualBadge(this.value); } else { document.getElementById('manualBadgeValidation').innerHTML = ''; }">
                     <div id="manualBadgeValidation"></div>
                 </div>
             </div>

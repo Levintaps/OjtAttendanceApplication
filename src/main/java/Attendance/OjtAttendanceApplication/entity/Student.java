@@ -172,7 +172,7 @@ public class Student {
 
     public LocalDate getEffectiveStartDate() {
         // Use OJT start date if set, otherwise fall back to registration date
-        return ojtStartDate != null ? ojtStartDate : registrationDate.toLocalDate();
+        return ojtStartDate;
     }
 
     // GETTERS AND SETTERS

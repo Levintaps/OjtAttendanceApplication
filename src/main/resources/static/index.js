@@ -426,8 +426,13 @@ async function updateButtonStates(studentData = null) {
         
         if (requiredHours > 0 && totalHours < requiredHours) {
             const remainingHours = requiredHours - totalHours;
-            const estimatedDays = calculateEstimatedDays(remainingHours, studentData);
-            statusTime.textContent = `Estimated ${estimatedDays} days to complete`;
+            const estimate = calculateEstimatedDaysAndHours(remainingHours, studentData);
+            statusTime.innerHTML = `<span style="display: flex; flex-direction: column; align-items: center; gap: 0.25rem;">
+                <span>Estimated: <strong>${estimate.formatted}</strong> to complete</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">
+                    ${remainingHours.toFixed(1)} hours remaining
+                </span>
+            </span>`;
         } else {
             statusTime.textContent = 'Ready for today\'s session';
         }
@@ -471,9 +476,18 @@ function createDashboardTabs(studentData) {
                     <div class="label">Days to Complete</div>
                     <div class="value" id="daysValue">
                         ${hasRequiredHours && totalHoursValue < requiredHoursValue
-                            ? `${estimatedDays} day(s)`
+                            ? (() => {
+                                const remainingHours = requiredHoursValue - totalHoursValue;
+                                const estimate = calculateEstimatedDaysAndHours(remainingHours, studentData);
+                                return `<span style="display: flex; flex-direction: column; gap: 0.25rem;">
+                                    <span style="font-size: 1.4rem;">${estimate.formatted}</span>
+                                    <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">
+                                        ${remainingHours.toFixed(1)}h remaining
+                                    </span>
+                                </span>`;
+                            })()
                             : hasRequiredHours
-                                ? '<span style="color: var(--success-color);">Complete!</span>'
+                                ? '<span style="color: var(--success-color);">Complete! ✓</span>'
                                 : 'Not Set'}
                     </div>
                 </div>
@@ -502,25 +516,64 @@ function createDashboardTabs(studentData) {
     });
 }
 
-function calculateEstimatedDays(remainingHours, studentData) {
-    if (remainingHours <= 0) return 0;
+function calculateEstimatedDaysAndHours(remainingHours, studentData) {
+    if (remainingHours <= 0) {
+        return { days: 0, hours: 0, formatted: 'Complete!' };
+    }
 
+    // Calculate average daily hours from recent attendance
     let averageDailyHours = STANDARD_WORK_HOURS;
 
     if (studentData.attendanceHistory && studentData.attendanceHistory.length > 0) {
-        const recentRecords = studentData.attendanceHistory.slice(0, 10);
-        const totalRecentHours = recentRecords.reduce((sum, record) => {
-            return sum + (parseFloat(record.totalHours) || 0);
-        }, 0);
+        // Get records from last 2 weeks (up to 14 records)
+        const recentRecords = studentData.attendanceHistory
+            .filter(record => record.totalHours && record.totalHours > 0)
+            .slice(0, 14);
 
         if (recentRecords.length > 0) {
+            const totalRecentHours = recentRecords.reduce((sum, record) => {
+                return sum + (parseFloat(record.totalHours) || 0);
+            }, 0);
+
             averageDailyHours = totalRecentHours / recentRecords.length;
         }
     }
 
-    const hoursPerDay = Math.max(averageDailyHours, STANDARD_WORK_HOURS, 4);
-    const estimatedDays = Math.ceil(remainingHours / hoursPerDay);
-    return estimatedDays;
+    // Use at least 4 hours per day, max 8 hours
+    const hoursPerDay = Math.max(Math.min(averageDailyHours, STANDARD_WORK_HOURS), 4);
+
+    // Calculate full days needed
+    const fullDays = Math.floor(remainingHours / hoursPerDay);
+
+    // Calculate remaining hours after full days
+    const remainingHoursAfterDays = remainingHours - (fullDays * hoursPerDay);
+
+    // Round remaining hours to nearest 0.5
+    const roundedHours = Math.round(remainingHoursAfterDays * 2) / 2;
+
+    // Format the result
+    let formatted = '';
+    if (fullDays > 0 && roundedHours > 0) {
+        formatted = `${fullDays}d ${roundedHours}h`;
+    } else if (fullDays > 0) {
+        formatted = `${fullDays} day${fullDays !== 1 ? 's' : ''}`;
+    } else if (roundedHours > 0) {
+        formatted = `${roundedHours}h`;
+    } else {
+        formatted = '< 1h';
+    }
+
+    return {
+        days: fullDays,
+        hours: roundedHours,
+        formatted: formatted,
+        totalDays: fullDays + (roundedHours > 0 ? 1 : 0) // Ceiling days
+    };
+}
+
+function calculateEstimatedDays(remainingHours, studentData) {
+    const result = calculateEstimatedDaysAndHours(remainingHours, studentData);
+    return result.totalDays;
 }
 
 function createAddTaskButton() {

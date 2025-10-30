@@ -68,7 +68,12 @@ function setupEventListeners() {
     idInputs.forEach(inputId => {
         const input = document.getElementById(inputId);
         if (input) {
-            input.addEventListener('input', function() {
+            // Remove existing listeners by cloning
+            const newInput = input.cloneNode(true);
+            input.parentNode.replaceChild(newInput, input);
+
+            // Add fresh listener
+            newInput.addEventListener('input', function() {
                 this.value = this.value.replace(/\D/g, '').slice(0, 4);
                 if (this.value.length === 4 && (inputId === 'newBadgeId' || inputId === 'regIdBadgeNew')) {
                     validateBadge(this.value, inputId);
@@ -169,8 +174,6 @@ function setupRegistrationFormListener() {
 
     // Add single event listener with capture phase to catch it first
     newForm.addEventListener('submit', registerStudentWithSchedule, true);
-
-    console.log('✅ Registration form listener attached (duplicates removed)');
 
     return newForm;
 }
@@ -546,9 +549,13 @@ async function displayStudentsTableNew(students) {
             activeSessions.forEach(record => {
                 activeSessionsMap[record.idBadge] = record;
             });
+        } else {
+            console.warn('Active sessions endpoint returned error:', response.status);
+            // Continue without active sessions data
         }
     } catch (error) {
         console.error('Failed to load active sessions:', error);
+        // Continue without active sessions data - don't block student display
     }
 
     tbody.innerHTML = students.map(student => {
@@ -559,8 +566,10 @@ async function displayStudentsTableNew(students) {
         const hasRequiredHours = requiredHours !== null && requiredHours > 0;
 
         let progressDisplay = 'N/A';
+        let progressPercentage = 0;
+
         if (hasRequiredHours) {
-            const progressPercentage = Math.min((totalHours / requiredHours) * 100, 100);
+            progressPercentage = Math.min((totalHours / requiredHours) * 100, 100);
             const progressClass = Math.floor(progressPercentage / 10);
             progressDisplay = `
                 <div class="progress-container">
@@ -638,11 +647,12 @@ async function displayStudentsTableNew(students) {
                                         </svg>
                                         Schedule
                                     </button>
-                                    <button class="menu-item" onclick="showStatusModal(${student.id}, '${student.fullName}', '${student.status || 'ACTIVE'}'); closeAllMenus()">
+                                    <button class="menu-item ${progressPercentage >= 100 ? 'highlight-complete' : ''}"
+                                            onclick="showStatusModal(${student.id}, '${student.fullName}', '${student.status || 'ACTIVE'}'); closeAllMenus()">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <polyline points="20 6 9 17 4 12"></polyline>
                                         </svg>
-                                        Change Status
+                                        ${progressPercentage >= 100 ? '🎉 Mark as Completed' : 'Change Status'}
                                     </button>
                                     <div class="menu-divider"></div>
                                     <button class="menu-item danger" onclick="showDeleteStudentModal(${student.id}, '${student.fullName}', '${student.idBadge}', '${student.status || 'ACTIVE'}'); closeAllMenus()">
@@ -850,6 +860,21 @@ function showRegisterStudentModal() {
         // Setup clean form listener
         const form = setupRegistrationFormListener();
 
+        // Re-attach badge validation listener
+        const badgeInput = document.getElementById('regIdBadgeNew');
+        if (badgeInput) {
+            // Clear and re-attach
+            const newBadgeInput = badgeInput.cloneNode(true);
+            badgeInput.parentNode.replaceChild(newBadgeInput, badgeInput);
+
+            newBadgeInput.addEventListener('input', function() {
+                this.value = this.value.replace(/\D/g, '').slice(0, 4);
+                if (this.value.length === 4) {
+                    validateBadge(this.value, 'regIdBadgeNew');
+                }
+            });
+        }
+
         // Make sure submit button is enabled
         const submitBtn = form.querySelector('button[type="submit"]');
         if (submitBtn) {
@@ -864,7 +889,12 @@ function showRegisterStudentModal() {
 
         modal.classList.add('show');
         document.body.style.overflow = 'hidden';
-        document.getElementById('regIdBadgeNew').focus();
+
+        // Focus on badge input after modal animation
+        setTimeout(() => {
+            const input = document.getElementById('regIdBadgeNew');
+            if (input) input.focus();
+        }, 300);
     }
 }
 
@@ -883,23 +913,44 @@ async function validateBadge(badgeId, inputId) {
     const validationId = inputId === 'regIdBadgeNew' ? 'regBadgeValidation' : 'newBadgeValidation';
     const validationDiv = document.getElementById(validationId);
 
-    if (!validationDiv || badgeId.length !== 4) {
+    // Clear validation if badge is empty or not 4 digits
+    if (!badgeId || badgeId.length !== 4) {
         if (validationDiv) validationDiv.innerHTML = '';
-        return;
+        return false;
     }
 
-    validationDiv.innerHTML = '<div class="validation-message checking">Checking availability...</div>';
+    // Show checking state
+    if (validationDiv) {
+        validationDiv.innerHTML = '<div class="validation-message checking">Checking availability...</div>';
+    }
 
     try {
         const response = await fetch(`${API_BASE_URL}/students/check-badge/${badgeId}`);
-        if (response.ok) {
-            const data = await response.json();
-            validationDiv.innerHTML = data.available
-                ? '<div class="validation-message available">✓ Badge available</div>'
-                : '<div class="validation-message unavailable">✗ Badge is already taken</div>';
+
+        if (!response.ok) {
+            if (validationDiv) {
+                validationDiv.innerHTML = '<div class="validation-message checking">Unable to verify badge</div>';
+            }
+            return false;
+        }
+
+        const data = await response.json();
+
+        if (validationDiv) {
+            if (data.available) {
+                validationDiv.innerHTML = '<div class="validation-message available">✓ Badge available</div>';
+                return true;
+            } else {
+                validationDiv.innerHTML = '<div class="validation-message unavailable">✗ Badge is already taken</div>';
+                return false;
+            }
         }
     } catch (error) {
-        validationDiv.innerHTML = '<div class="validation-message checking">Unable to verify badge</div>';
+        console.error('Badge validation error:', error);
+        if (validationDiv) {
+            validationDiv.innerHTML = '<div class="validation-message checking">Unable to verify badge</div>';
+        }
+        return false;
     }
 }
 
@@ -1023,7 +1074,7 @@ async function registerStudentWithSchedule(event) {
             }
         }
 
-        // ✅ CLOSE MODAL AND SHOW NOTIFICATION
+        // CLOSE MODAL AND SHOW NOTIFICATION
         hideLoading();
         closeModal('studentRegistrationModal');
 
@@ -1162,15 +1213,38 @@ async function submitHoursChange(event) {
     }
 }
 
-function showStatusModal(studentId, studentName, currentStatus) {
+async function showStatusModal(studentId, studentName, currentStatus) {
     currentManagementStudent = { id: studentId, name: studentName, status: currentStatus };
 
-    document.getElementById('statusStudentInfo').innerHTML = `
-        <div class="student-detail">
-            <h4>${studentName}</h4>
-            <p><strong>Current Status:</strong> <span class="status-badge status-${currentStatus.toLowerCase()}">${currentStatus}</span></p>
-        </div>
-    `;
+    // Check if student has active session
+    try {
+        const activeCheck = await fetch(`${API_BASE_URL}/admin/attendance/active-sessions`);
+        if (activeCheck.ok) {
+            const activeSessions = await activeCheck.json();
+            const hasActiveSession = activeSessions.some(s => s.studentId === studentId);
+
+            if (hasActiveSession) {
+                document.getElementById('statusStudentInfo').innerHTML = `
+                    <div class="student-detail">
+                        <h4>${studentName}</h4>
+                        <p><strong>Current Status:</strong> <span class="status-badge status-${currentStatus.toLowerCase()}">${currentStatus}</span></p>
+                    </div>
+                    <div class="alert alert-warning">
+                        <strong>⚠️ Warning:</strong> This student has an active time-in session. Please complete their time-out before changing status to COMPLETED.
+                    </div>
+                `;
+            } else {
+                document.getElementById('statusStudentInfo').innerHTML = `
+                    <div class="student-detail">
+                        <h4>${studentName}</h4>
+                        <p><strong>Current Status:</strong> <span class="status-badge status-${currentStatus.toLowerCase()}">${currentStatus}</span></p>
+                    </div>
+                `;
+            }
+        }
+    } catch (error) {
+        console.error('Failed to check active sessions:', error);
+    }
 
     document.getElementById('newStudentStatus').value = currentStatus;
     showModal('statusManagementModal');
@@ -1186,34 +1260,91 @@ async function submitStatusChange(event) {
         return;
     }
 
+    // Disable submit button to prevent double submission
+    const submitBtn = document.querySelector('#statusManagementForm button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<div class="spinner" style="width: 16px; height: 16px; margin: 0 auto;"></div> Processing...';
+
     showLoading();
+
     try {
         let response;
+
         if (newStatus === 'COMPLETED') {
+            console.log('🎓 Attempting to complete student ID:', currentManagementStudent.id);
+
+            // Use the complete endpoint
             response = await fetch(`${API_BASE_URL}/admin/students/${currentManagementStudent.id}/complete`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
+                headers: {
+                    'Content-Type': 'application/json'
+                }
             });
         } else {
+            console.log('📝 Attempting to change status to:', newStatus);
+
+            // Use the regular status endpoint
             response = await fetch(`${API_BASE_URL}/admin/students/${currentManagementStudent.id}/status`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({ status: newStatus })
             });
         }
 
+        console.log('Response status:', response.status);
+
         if (response.ok) {
-            showAlert(`Student status changed to ${newStatus} successfully!`, 'success');
+            const result = await response.json();
+            console.log('✅ Status update successful:', result);
+
+            hideLoading();
             closeModal('statusManagementModal');
+
+            showAlert(`Student status changed to ${newStatus} successfully!`, 'success');
+
+            // Reload student data
             await loadAllStudents();
+            await loadDashboard();
+
         } else {
-            const errorData = await response.json();
-            showAlert(errorData.message || 'Failed to update student status', 'error');
+            // Get error details from response
+            const errorData = await response.json().catch(() => null);
+            const errorMessage = errorData?.message || errorData?.error || `Server returned ${response.status}`;
+
+            console.error('❌ Status update failed:', {
+                status: response.status,
+                statusText: response.statusText,
+                errorData: errorData
+            });
+
+            hideLoading();
+
+            // More detailed error message
+            if (response.status === 400) {
+                showAlert(`Cannot complete student: ${errorMessage}`, 'error');
+            } else if (response.status === 404) {
+                showAlert('Student not found. Please refresh and try again.', 'error');
+            } else if (response.status === 500) {
+                showAlert('Server error. Please check if the student has any pending attendance records.', 'error');
+            } else {
+                showAlert(`Failed to update student status: ${errorMessage}`, 'error');
+            }
+
+            // Re-enable button on error
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
         }
     } catch (error) {
-        showAlert('Failed to update student status', 'error');
-    } finally {
         hideLoading();
+        console.error('❌ Network/Connection error:', error);
+        showAlert('Failed to update student status: ' + error.message, 'error');
+
+        // Re-enable button on error
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
     }
 }
 
@@ -2752,8 +2883,9 @@ function showManualEntryModal() {
 async function validateManualBadge(badgeId) {
     const validationDiv = document.getElementById('manualBadgeValidation');
 
+    // Clear validation if badge is empty or not 4 digits
     if (!badgeId || badgeId.length !== 4) {
-        validationDiv.innerHTML = '';
+        if (validationDiv) validationDiv.innerHTML = '';
         return false;
     }
 
@@ -2987,15 +3119,6 @@ async function executeManualEntry() {
 
     closeModal('manualEntryConfirmModal');
     showLoading();
-/**
- * Execute the manual entry after confirmation
- */
-async function executeManualEntry() {
-    const modal = document.getElementById('manualEntryConfirmModal');
-    const payload = JSON.parse(modal.dataset.payload);
-
-    closeModal('manualEntryConfirmModal');
-    showLoading();
 
     try {
         const response = await fetch(`${API_BASE_URL}/admin/attendance/manual-entry`, {
@@ -3011,10 +3134,13 @@ async function executeManualEntry() {
 
         const result = await response.json();
 
-        // Show success modal instead of alert
-        showManualEntrySuccess(result);
+        hideLoading();
 
+        // Close the manual entry modal BEFORE showing result
         closeModal('manualEntryModal');
+
+        // Show success modal
+        showManualEntrySuccess(result);
 
         // Refresh relevant data
         await Promise.all([
@@ -3026,10 +3152,9 @@ async function executeManualEntry() {
         ]);
 
     } catch (error) {
+        hideLoading();
         console.error('Manual entry error:', error);
         showManualEntryError(error.message || 'Failed to create manual entry');
-    } finally {
-        hideLoading();
     }
 }
 
@@ -3126,7 +3251,6 @@ function showManualEntryError(errorMessage) {
     `;
 
     showModal('manualEntryResultModal');
-}
 }
 
 /**
@@ -5250,4 +5374,4 @@ function startPeriodicRefresh() {
     }, 120000);
 }
 
-console.log('TERA IT Admin Panel - Version 2.1.0 Loaded Successfully');
+console.log('✅ TERA IT Admin Panel - Clean Version Loaded Successfully');

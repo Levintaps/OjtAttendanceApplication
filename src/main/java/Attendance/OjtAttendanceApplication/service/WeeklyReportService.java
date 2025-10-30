@@ -57,11 +57,27 @@ public class WeeklyReportService {
         Student student = studentRepository.findByIdBadge(idBadge)
                 .orElseThrow(() -> new RuntimeException("Student not found"));
 
-        // Get OJT start date
-        LocalDate ojtStartDate = student.getEffectiveStartDate();
+        // FIXED: Get OJT start date from first attendance record if not manually set
+        LocalDate ojtStartDate = student.getOjtStartDate();
 
-        // Calculate the Monday of the week containing the OJT start date
-        LocalDate firstMonday = ojtStartDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        if (ojtStartDate == null) {
+            // Get first attendance record date
+            List<AttendanceRecord> records = attendanceRecordRepository
+                    .findByStudentOrderByAttendanceDateDesc(student);
+
+            if (records.isEmpty()) {
+                throw new RuntimeException("No attendance records found. Please complete at least one attendance session first.");
+            }
+
+            // Get the earliest attendance date
+            ojtStartDate = records.stream()
+                    .map(AttendanceRecord::getAttendanceDate)
+                    .min(LocalDate::compareTo)
+                    .orElseThrow(() -> new RuntimeException("Unable to determine OJT start date"));
+        }
+
+        // Calculate the Monday ON OR AFTER the OJT start date
+        LocalDate firstMonday = ojtStartDate.with(TemporalAdjusters.nextOrSame(DayOfWeek.MONDAY));
 
         // Calculate the target week's Monday and Sunday
         LocalDate weekStartDate = firstMonday.plusWeeks(weekNumber - 1);
@@ -84,9 +100,31 @@ public class WeeklyReportService {
                 .orElseThrow(() -> new RuntimeException("Student not found"));
 
         // Calculate week number based on OJT start date and calendar weeks
-        Integer weekNumber = calculateCalendarWeekNumber(student.getEffectiveStartDate(), startDate);
+        LocalDate ojtStartDate = getActualOjtStartDate(student);
+        Integer weekNumber = calculateCalendarWeekNumber(ojtStartDate, startDate);
 
         return generateWeeklyReportPDF(idBadge, startDate, endDate, weekNumber);
+    }
+
+    private LocalDate getActualOjtStartDate(Student student) {
+        LocalDate ojtStartDate = student.getOjtStartDate();
+
+        if (ojtStartDate == null) {
+            // Get first attendance record date
+            List<AttendanceRecord> records = attendanceRecordRepository
+                    .findByStudentOrderByAttendanceDateDesc(student);
+
+            if (records.isEmpty()) {
+                throw new RuntimeException("No attendance records found");
+            }
+
+            ojtStartDate = records.stream()
+                    .map(AttendanceRecord::getAttendanceDate)
+                    .min(LocalDate::compareTo)
+                    .orElse(student.getRegistrationDate().toLocalDate());
+        }
+
+        return ojtStartDate;
     }
 
     /**
@@ -114,10 +152,14 @@ public class WeeklyReportService {
      * Calculate total available calendar weeks for a student
      */
     public Integer calculateTotalAvailableWeeks(LocalDate ojtStartDate) {
+        if (ojtStartDate == null) {
+            return 0;
+        }
+
         LocalDate today = LocalDate.now();
 
-        // Get Monday of OJT start week
-        LocalDate firstMonday = ojtStartDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        // Get Monday of OJT start week (on or after OJT start)
+        LocalDate firstMonday = ojtStartDate.with(TemporalAdjusters.nextOrSame(DayOfWeek.MONDAY));
 
         // Get Monday of current week
         LocalDate currentMonday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
