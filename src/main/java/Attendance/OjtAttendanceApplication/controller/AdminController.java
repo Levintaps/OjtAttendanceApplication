@@ -1,9 +1,8 @@
 package Attendance.OjtAttendanceApplication.controller;
 
 import Attendance.OjtAttendanceApplication.dto.*;
-import Attendance.OjtAttendanceApplication.entity.AttendanceRecord;
-import Attendance.OjtAttendanceApplication.entity.Student;
-import Attendance.OjtAttendanceApplication.entity.TaskEntry;
+import Attendance.OjtAttendanceApplication.entity.*;
+import Attendance.OjtAttendanceApplication.repository.AdminNotificationRepository;
 import Attendance.OjtAttendanceApplication.repository.AttendanceRecordRepository;
 import Attendance.OjtAttendanceApplication.repository.StudentRepository;
 import Attendance.OjtAttendanceApplication.service.AttendanceService;
@@ -43,6 +42,9 @@ public class AdminController {
 
     @Autowired
     private AttendanceRecordRepository attendanceRecordRepository;
+
+    @Autowired
+    private AdminNotificationRepository adminNotificationRepository;
 
 
 
@@ -736,6 +738,105 @@ public class AdminController {
         try {
             AttendanceResponse response = attendanceService.processManualAttendance(request);
             return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
+    }
+
+    /**
+     * Handle schedule override request from student
+     */
+    @PostMapping("/schedule-override/request")
+    public ResponseEntity<?> submitScheduleOverrideRequest(@Valid @RequestBody ScheduleOverrideRequest request) {
+        try {
+            // Find student
+            Student student = studentRepository.findByIdBadge(request.getIdBadge())
+                    .orElseThrow(() -> new RuntimeException("Student not found"));
+
+            // Find attendance record
+            AttendanceRecord record = attendanceRecordRepository.findById(request.getRecordId())
+                    .orElseThrow(() -> new RuntimeException("Attendance record not found"));
+
+            // Create notification for admin
+            String message = String.format(
+                    "SCHEDULE OVERRIDE REQUEST - %s (%s) arrived %d minutes early. " +
+                            "Scheduled: %s, Actual: %s. Reason: %s",
+                    student.getFullName(),
+                    student.getIdBadge(),
+                    request.getEarlyMinutes(),
+                    request.getScheduledTime(),
+                    request.getActualTime(),
+                    request.getReason()
+            );
+
+            AdminNotification notification = new AdminNotification(
+                    student,
+                    record,
+                    NotificationType.LONG_WORK_SESSION, // Reuse existing type or create new one
+                    message
+            );
+
+            adminNotificationRepository.save(notification);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Schedule override request submitted successfully"
+            ));
+
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
+    }
+
+    /**
+     * Admin approves schedule override
+     */
+    @PostMapping("/schedule-override/approve/{recordId}")
+    public ResponseEntity<?> approveScheduleOverride(@PathVariable Long recordId) {
+        try {
+            AttendanceRecord record = attendanceRecordRepository.findById(recordId)
+                    .orElseThrow(() -> new RuntimeException("Attendance record not found"));
+
+            // Add flag to indicate schedule was overridden for this day
+            String currentTasks = record.getTasksCompleted() != null ? record.getTasksCompleted() : "";
+            record.setTasksCompleted(currentTasks + "\n[ADMIN APPROVED: Early work hours counted - Schedule override granted]");
+
+            attendanceRecordRepository.save(record);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Schedule override approved. Early hours will be counted for this session."
+            ));
+
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
+    }
+
+    /**
+     * Admin rejects schedule override
+     */
+    @PostMapping("/schedule-override/reject/{recordId}")
+    public ResponseEntity<?> rejectScheduleOverride(@PathVariable Long recordId,
+                                                    @RequestBody Map<String, String> request) {
+        try {
+            String rejectReason = request.get("reason");
+
+            AttendanceRecord record = attendanceRecordRepository.findById(recordId)
+                    .orElseThrow(() -> new RuntimeException("Attendance record not found"));
+
+            // Add flag to indicate schedule was rejected
+            String currentTasks = record.getTasksCompleted() != null ? record.getTasksCompleted() : "";
+            record.setTasksCompleted(currentTasks +
+                    "\n[ADMIN REJECTED: Early work hours NOT counted - Reason: " + rejectReason + "]");
+
+            attendanceRecordRepository.save(record);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Schedule override rejected"
+            ));
+
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
         }
