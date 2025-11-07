@@ -3,6 +3,7 @@ package Attendance.OjtAttendanceApplication.service;
 import Attendance.OjtAttendanceApplication.dto.*;
 import Attendance.OjtAttendanceApplication.entity.*;
 import Attendance.OjtAttendanceApplication.repository.AttendanceRecordRepository;
+import Attendance.OjtAttendanceApplication.service.ScheduleOverrideService;
 import Attendance.OjtAttendanceApplication.repository.StudentRepository;
 import Attendance.OjtAttendanceApplication.repository.TaskEntryRepository;
 import jakarta.transaction.Transactional;
@@ -42,6 +43,9 @@ public class AttendanceService {
 
     @Autowired
     private TaskService taskService;
+
+    @Autowired
+    private ScheduleOverrideService scheduleOverrideService;
 
     // ==================== STUDENT REGISTRATION ====================
 
@@ -1257,23 +1261,32 @@ public class AttendanceService {
         // Store student data before deletion for response
         StudentDto deletedStudentDto = convertToStudentDto(student);
 
-        // Delete in correct order due to foreign key constraints
-        // 1. Delete all notifications related to this student
+        // Get all attendance records for this student
         List<AttendanceRecord> studentRecords = attendanceRecordRepository
                 .findByStudentOrderByAttendanceDateDesc(student);
 
+        // Delete in correct order to respect foreign key constraints
         for (AttendanceRecord record : studentRecords) {
-            // Delete notifications for this record
-            notificationService.deleteNotificationsForRecord(record);
+            try {
+                // 1. Delete schedule override requests for this record (NEW!)
+                scheduleOverrideService.deleteOverrideRequestsByRecord(record.getId());
 
-            // Delete task entries for this record
-            taskService.deleteTasksForRecord(record.getId());
+                // 2. Delete notifications for this record
+                notificationService.deleteNotificationsForRecord(record);
+
+                // 3. Delete task entries for this record
+                taskService.deleteTasksForRecord(record.getId());
+
+            } catch (Exception e) {
+                System.err.println("Error deleting related data for record " + record.getId() + ": " + e.getMessage());
+                // Continue with other records
+            }
         }
 
-        // 2. Delete all attendance records
+        // 4. Delete all attendance records
         attendanceRecordRepository.deleteAll(studentRecords);
 
-        // 3. Finally delete the student
+        // 5. Finally delete the student
         studentRepository.delete(student);
 
         return deletedStudentDto;

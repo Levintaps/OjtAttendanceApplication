@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -196,5 +197,40 @@ public class ScheduleOverrideService {
         dto.setReviewedBy(entity.getReviewedBy());
         dto.setAdminResponse(entity.getAdminResponse());
         return dto;
+    }
+
+    @Transactional
+    public void deleteOverrideRequestsByRecord(Long attendanceRecordId) {
+        try {
+            Optional<ScheduleOverrideEntity> request = scheduleOverrideRepository
+                    .findByAttendanceRecordId(attendanceRecordId);
+
+            if (request.isPresent()) {
+                scheduleOverrideRepository.delete(request.get());
+                System.out.println("Deleted schedule override request for record: " + attendanceRecordId);
+            }
+        } catch (Exception e) {
+            System.err.println("Error deleting schedule override requests for record " +
+                    attendanceRecordId + ": " + e.getMessage());
+            // Don't throw exception - allow deletion to continue
+        }
+    }
+
+    @Transactional
+    public void deleteOverrideRequestsByStudent(Student student) {
+        try {
+            List<ScheduleOverrideEntity> requests = scheduleOverrideRepository
+                    .findByStudentOrderByRequestedAtDesc(student);
+
+            if (!requests.isEmpty()) {
+                scheduleOverrideRepository.deleteAll(requests);
+                System.out.println("Deleted " + requests.size() +
+                        " schedule override requests for student: " + student.getFullName());
+            }
+        } catch (Exception e) {
+            System.err.println("Error deleting schedule override requests for student " +
+                    student.getFullName() + ": " + e.getMessage());
+            // Don't throw exception - allow deletion to continue
+        }
     }
 }
