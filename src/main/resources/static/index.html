@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="index.css">
     <link rel="stylesheet" href="notification.css">
     <link rel="stylesheet" href="credits.css">
+    <link rel="stylesheet" href="chatbot.css">
     <!-- SweetAlert2 CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
     <!-- Animate.css for animations -->
@@ -30,14 +31,68 @@
     </div>
 </div>
 
+<!-- Chat Widget -->
+<div id="chatWidget" class="chat-widget">
+    <button class="chat-head" onclick="toggleChat()" title="Ask a question">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" class="chat-icon">
+            <path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="chat-badge">?</span>
+    </button>
+
+    <div class="chat-box" id="chatBox">
+        <div class="chat-header">
+            <div class="chat-header-content">
+                <div class="chat-avatar">🤖</div>
+                <div>
+                    <h4>OJT Assistant</h4>
+                    <span class="chat-status">Online</span>
+                </div>
+            </div>
+            <button class="chat-minimize" onclick="toggleChat()">−</button>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+            <div class="chat-message bot-message">
+                <div class="message-avatar">🤖</div>
+                <div class="message-content">
+                    <p>Hi! I'm your OJT Assistant. Ask me anything about:</p>
+                    <div class="quick-suggestions">
+                        <button class="suggestion-btn" onclick="askQuestion('How do I register?')">📝 Registration</button>
+                        <button class="suggestion-btn" onclick="askQuestion('How do I add tasks?')">📋 Tasks</button>
+                        <button class="suggestion-btn" onclick="askQuestion('Badge replaced')">🆔 Badge Issues</button>
+                        <button class="suggestion-btn" onclick="askQuestion('Change schedule')">⏰ Schedule</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-input-container">
+            <input type="text" id="chatInput" class="chat-input" placeholder="Type your question..." onkeypress="handleChatEnter(event)">
+            <button class="chat-send" onclick="sendMessage()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+</div>
+
 <div class="container">
     <!-- Alert Container -->
     <div id="toast-container"></div>
 
     <div class="main-card">
+        <button class="help-icon-btn" onclick="showHelpGuide()" title="Need Help? Click here for a quick guide">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" class="help-icon">
+                <circle cx="12" cy="12" r="10" stroke-width="2"/>
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <line x1="12" y1="17" x2="12.01" y2="17" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+        </button>
         <div class="welcome-section">
             <h2>Welcome to Your Workspace</h2>
-            <p>Track your OJT hours seamlessly. Enter your 4-digit ID badge to manage your attendance and monitor your professional development.</p>
+            <p>Manage your OJT experience with precision. Use your 4-digit ID badge to log attendance, monitor your progress, download weekly reports, and stay informed of your remaining hours.</p>
         </div>
 
         <div class="input-section">
@@ -56,6 +111,18 @@
             <div class="status-label">Current Status</div>
             <div id="currentStatusText" class="status-value">Loading...</div>
             <div id="currentStatusTime" class="status-time"></div>
+        </div>
+
+        <!-- EARLY ARRIVAL INFO ICON -->
+        <div id="earlyArrivalIndicator" class="early-arrival-indicator d-none">
+            <button class="info-icon-btn" onclick="showEarlyArrivalModal()" title="Important: Early Arrival Policy">
+                <svg class="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <circle cx="12" cy="12" r="10" stroke-width="2"/>
+                    <line x1="12" y1="16" x2="12" y2="12" stroke-width="2" stroke-linecap="round"/>
+                    <line x1="12" y1="8" x2="12.01" y2="8" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                <span class="indicator-text">You arrived early - Click for info</span>
+            </button>
         </div>
 
         <div class="action-buttons">
@@ -123,7 +190,6 @@
 </div>
 
 <!-- Admin Access Modal -->
-<!-- Admin Access Modal -->
 <div id="adminModal" class="modal">
     <div class="modal-content">
         <button class="modal-close" onclick="closeAdminModal()">×</button>
@@ -155,19 +221,209 @@
     <div class="modal-content">
         <button class="modal-close" onclick="closeAddTaskModal()">×</button>
         <div class="modal-header">
-            <h3>Add Task</h3>
-            <p>Record a task you've completed during your current session</p>
+            <h3>📝 Add Task</h3>
+            <p>Record completed tasks - use presets or type manually</p>
         </div>
         <form id="addTaskForm">
             <div class="form-group">
                 <label for="taskDescription">Task Description:</label>
-                <textarea id="taskDescription" name="taskDescription" placeholder="Describe what you accomplished, learned, or worked on..." required></textarea>
+                <!-- Autocomplete will wrap this -->
+                <textarea id="taskDescription" name="taskDescription"
+                          placeholder="Start typing or use presets below..." required></textarea>
             </div>
             <div class="modal-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeAddTaskModal()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Add Task</button>
+                <button type="submit" class="btn btn-primary">Add Task(s)</button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Task Preset Helper Modal -->
+<div id="taskPresetModal" class="modal">
+    <div class="modal-content preset-modal-content">
+        <button class="modal-close" onclick="closePresetModal()">×</button>
+        <div class="modal-header">
+            <h3>🎯 Task Presets</h3>
+            <p>Quick select common tasks</p>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="preset-search-container">
+            <input type="text" id="presetSearch" class="preset-search"
+                   placeholder="🔍 Search tasks..." oninput="filterPresets()">
+        </div>
+
+        <!-- Categories Container -->
+        <div class="preset-categories">
+
+            <!-- IT TASKS CATEGORY -->
+            <div class="preset-category">
+                <button class="category-header" onclick="toggleCategory('itTasks')">
+                    <span class="category-title">
+                        <span class="category-icon">🔧</span>
+                        IT Tasks
+                    </span>
+                    <span class="category-arrow">▼</span>
+                </button>
+                <div id="itTasks" class="category-content">
+
+                    <!-- Ticket -->
+                    <div class="preset-subcategory">
+                        <div class="subcategory-title">🎫 Ticket</div>
+                        <div class="preset-buttons">
+                            <button class="preset-btn" onclick="selectPreset('Ticket: Keyboard Replacement')">Keyboard Replacement</button>
+                            <button class="preset-btn" onclick="selectPreset('Ticket: Mouse Replacement')">Mouse Replacement</button>
+                            <button class="preset-btn" onclick="selectPreset('Ticket: Re-profile')">Re-profile</button>
+                            <button class="preset-btn" onclick="selectPreset('Ticket: Profile Remover')">Profile Remover (Manual)</button>
+                            <button class="preset-btn" onclick="selectPreset('Ticket: VGA Cable')">VGA Cable</button>
+                            <button class="preset-btn" onclick="selectPreset('Ticket: LAN Cable')">LAN Cable</button>
+                            <button class="preset-btn" onclick="selectPreset('Ticket: Internet Issue')">Internet Issue</button>
+                            <button class="preset-btn" onclick="selectPreset('Ticket: Monitor Issue')">Monitor Issue</button>
+                            <button class="preset-btn" onclick="selectPreset('Ticket: Headset Replacement')">Headset Replacement</button>
+                        </div>
+                    </div>
+
+                    <!-- CAF -->
+                    <div class="preset-subcategory">
+                        <div class="subcategory-title">📝 CAF</div>
+                        <div class="preset-buttons">
+                            <button class="preset-btn" onclick="selectPreset('CAF: Returned Headset')">Returned Headset</button>
+                            <button class="preset-btn" onclick="selectPreset('CAF: Returned & Replacement')">Returned & Replacement Headset</button>
+                            <button class="preset-btn" onclick="selectPreset('CAF: Returned Monitor')">Returned Monitor</button>
+                            <button class="preset-btn" onclick="selectPreset('CAF: Returned & Replacement Monitor')">Returned & Replacement Monitor</button>
+                            <button class="preset-btn" onclick="selectPreset('CAF: Returned Multiple Assets')">Returned Multiple Assets</button>
+                        </div>
+                    </div>
+
+                    <!-- SORTING -->
+                    <div class="preset-subcategory">
+                        <div class="subcategory-title">📦 Sorting</div>
+                        <div class="preset-buttons">
+                            <button class="preset-btn" onclick="selectPreset('Sorting: All Assets')">All Assets</button>
+                            <button class="preset-btn" onclick="selectPreset('Sorting: Multiple Assets')">Multiple Assets</button>
+                        </div>
+                    </div>
+
+                    <!-- CABLE GROOM -->
+                    <div class="preset-subcategory">
+                        <div class="subcategory-title">🔌 Cable Groom</div>
+                        <div class="preset-buttons">
+                            <button class="preset-btn" onclick="selectPreset('Cable Groom')">Cable Groom</button>
+                        </div>
+                    </div>
+
+                    <!-- WALL TO WALL -->
+                    <div class="preset-subcategory">
+                        <div class="subcategory-title">🏢 Wall to Wall</div>
+                        <div class="preset-buttons">
+                            <button class="preset-btn" onclick="selectPreset('Wall to Wall')">Wall to wall</button>
+                        </div>
+                    </div>
+
+                    <!-- COMPLIANCE -->
+                    <div class="preset-subcategory">
+                        <div class="subcategory-title">✅ Compliance</div>
+                        <div class="preset-buttons">
+                            <button class="preset-btn" onclick="selectPreset('Compliance: Get mac address')">Get mac address</button>
+                            <button class="preset-btn" onclick="selectPreset('Compliance: Random Check')">Random Check</button>
+                            <button class="preset-btn" onclick="selectPreset('Compliance: Vlan')">Vlan</button>
+                        </div>
+                    </div>
+
+                    <!-- RE-IMAGE -->
+                    <div class="preset-subcategory">
+                        <div class="subcategory-title">💿 Re-image</div>
+                        <div class="preset-buttons">
+                            <button class="preset-btn" onclick="selectPreset('Re-image mini cpu')">Mini cpu</button>
+                            <button class="preset-btn" onclick="selectPreset('Re-image laptop')">laptop</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PRODUCTION ROOMS CATEGORY -->
+            <div class="preset-category">
+                <button class="category-header" onclick="toggleCategory('prodRooms')">
+                    <span class="category-title">
+                        <span class="category-icon">🏭</span>
+                        Production Rooms
+                    </span>
+                    <span class="category-arrow">▼</span>
+                </button>
+                <div id="prodRooms" class="category-content">
+                    <div class="preset-buttons room-buttons">
+                        <button class="preset-btn" onclick="selectRoom('Mezzanine')">Mezzanine</button>
+                        <button class="preset-btn" onclick="selectRoom('Amazon 11F')">Amazon 11F</button>
+                        <button class="preset-btn" onclick="selectRoom('Project Buzz 11F')">Project Buzz 11F</button>
+                        <button class="preset-btn" onclick="selectRoom('Bytedance 12F')">Bytedance 12F</button>
+                        <button class="preset-btn" onclick="selectRoom('Webjet 12F')">Webjet 12F</button>
+                        <button class="preset-btn" onclick="selectRoom('Healthfirst 12F')">Healthfirst 12F</button>
+                        <button class="preset-btn" onclick="selectRoom('Bytedance 14F')">Bytedance 14F</button>
+                        <button class="preset-btn" onclick="selectRoom('Healthfirst 14F')">Healthfirst 14F</button>
+                        <button class="preset-btn" onclick="selectRoom('IBX 14F')">IBX 14F</button>
+                        <button class="preset-btn" onclick="selectRoom('Amazon EERO 14F')">Amazon EERO 14F</button>
+                        <button class="preset-btn" onclick="selectRoom('Transurban 15F')">Transurban 15F</button>
+                        <button class="preset-btn" onclick="selectRoom('Recruitment 16F')">Recruitment 16F</button>
+                        <button class="preset-btn" onclick="selectRoom('Admin 16F')">Admin 16F</button>
+                        <button class="preset-btn" onclick="selectRoom('Microsoft 17F')">Microsoft 17F</button>
+                        <button class="preset-btn" onclick="selectRoom('LinkedIn 17F')">LinkedIn 17F</button>
+                        <button class="preset-btn" onclick="selectRoom('Bytedance 18F')">Bytedance 18F</button>
+                        <button class="preset-btn" onclick="selectRoom('Aetna 18F')">Aetna 18F</button>
+                        <button class="preset-btn" onclick="selectRoom('Aetna 19F')">Aetna 19F</button>
+                        <button class="preset-btn" onclick="selectRoom('Spotify 20F')">Spotify 20F</button>
+                        <button class="preset-btn" onclick="selectRoom('Bytedance 20F')">Bytedance 20F</button>
+                        <button class="preset-btn" onclick="selectRoom('Aetna 21F')">Aetna 21F</button>
+                        <button class="preset-btn" onclick="selectRoom('Real Defense 21F')">Real Defense 21F</button>
+                        <button class="preset-btn" onclick="selectRoom('Project Power 21F')">Project Power 21F</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TRAINING ROOMS CATEGORY -->
+            <div class="preset-category">
+                <button class="category-header" onclick="toggleCategory('trainingRooms')">
+                    <span class="category-title">
+                        <span class="category-icon">🎓</span>
+                        Training Rooms
+                    </span>
+                    <span class="category-arrow">▼</span>
+                </button>
+                <div id="trainingRooms" class="category-content">
+                    <div class="preset-buttons room-buttons">
+                        <button class="preset-btn" onclick="selectRoom('Seattle')">Seattle</button>
+                        <button class="preset-btn" onclick="selectRoom('Luxembourg')">Luxembourg</button>
+                        <button class="preset-btn" onclick="selectRoom('Sydney')">Sydney</button>
+                        <button class="preset-btn" onclick="selectRoom('Brisbane')">Brisbane</button>
+                        <button class="preset-btn" onclick="selectRoom('Ontario')">Ontario</button>
+                        <button class="preset-btn" onclick="selectRoom('Dubai')">Dubai</button>
+                        <button class="preset-btn" onclick="selectRoom('Tempe')">Tempe</button>
+                        <button class="preset-btn" onclick="selectRoom('Bratislava')">Bratislava</button>
+                        <button class="preset-btn" onclick="selectRoom('Sofia')">Sofia</button>
+                        <button class="preset-btn" onclick="selectRoom('Greenville')">Greenville</button>
+                        <button class="preset-btn" onclick="selectRoom('Rochester')">Rochester</button>
+                        <button class="preset-btn" onclick="selectRoom('Gourock')">Gourock</button>
+                        <button class="preset-btn" onclick="selectRoom('Porto')">Porto</button>
+                        <button class="preset-btn" onclick="selectRoom('US')">US</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Selected Preview -->
+        <div id="selectedPreview" class="selected-preview" style="display: none;">
+            <div class="selected-header">
+                <span>✓ Selected</span>
+                <button onclick="clearSelectedPresets()" class="clear-btn">Clear All</button>
+            </div>
+            <div id="selectedList" class="selected-list"></div>
+        </div>
+
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="closePresetModal()">Close</button>
+            <button class="btn btn-primary" onclick="insertPresetsToTask()">Insert Selected</button>
+        </div>
     </div>
 </div>
 
@@ -296,9 +552,14 @@
 
                     <div class="credit-item">
                         <span class="credit-role">Special Thanks To:</span>
-                        <span class="credit-name">Tofi Aquino</span>
-                        <span class="credit-name">Mike Cercado</span>
-                        <span class="credit-name">Joshua Cordejo</span>
+                        <span class="credit-name">CHRISTOPHER AQUINO</span>
+                        <span class="credit-title">IT Manager</span>
+                        <span class="credit-name">MIKE CERCADO</span>
+                        <span class="credit-title">IT Supervisor</span>
+                        <span class="credit-name">JOSHUA CORDEJO</span>
+                        <span class="credit-title">Senior</span>
+                        <span class="credit-name">RAMIL PANGARAL</span>
+                        <span class="credit-title">Senior</span>
                     </div>
                 </div>
 
@@ -433,7 +694,7 @@
                     <div class="version-info">
                         <div class="version-item">
                             <span class="version-label">Version</span>
-                            <span class="version-value">2.1.0</span>
+                            <span class="version-value">2.1.5</span>
                         </div>
                         <div class="version-item">
                             <span class="version-label">Release Date</span>
@@ -460,6 +721,368 @@
     </div>
 </div>
 
+<!-- Early Arrival Policy Modal -->
+<div id="earlyArrivalModal" class="modal">
+    <div class="modal-content" style="max-width: 600px;">
+        <button class="modal-close" onclick="closeEarlyArrivalModal()">×</button>
+
+        <div class="modal-header">
+            <div class="modal-icon-wrapper warning">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" class="modal-header-icon">
+                    <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <h3>⚠️ Early Arrival Policy</h3>
+            <p>Important information about your early time-in</p>
+        </div>
+
+        <div class="policy-modal-body">
+
+            <!-- Main Warning -->
+            <div class="policy-alert">
+                <div class="alert-icon">🚫</div>
+                <div class="alert-content">
+                    <h4>Early Hours Are NOT Counted</h4>
+                    <p>Arriving before your scheduled start time does not add extra hours to your daily total.</p>
+                </div>
+            </div>
+
+            <!-- Your Situation -->
+            <div class="situation-card">
+                <h5>📊 Your Current Situation:</h5>
+                <div class="situation-grid">
+                    <div class="situation-item">
+                        <span class="sit-label">Scheduled Time:</span>
+                        <span class="sit-value" id="modalScheduledTime">-</span>
+                    </div>
+                    <div class="situation-item">
+                        <span class="sit-label">Your Time In:</span>
+                        <span class="sit-value early-time" id="modalActualTime">-</span>
+                    </div>
+                    <div class="situation-item">
+                        <span class="sit-label">Early By:</span>
+                        <span class="sit-value warning-time" id="modalEarlyMinutes">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rules -->
+            <div class="rules-section">
+                <h5>📋 How This Works:</h5>
+                <div class="rule-list">
+                    <div class="rule">
+                        <svg class="rule-check" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                        </svg>
+                        <span>You must complete your <strong>full scheduled hours</strong></span>
+                    </div>
+                    <div class="rule">
+                        <svg class="rule-check" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                        </svg>
+                        <span>Only hours <strong>within your schedule</strong> are tracked</span>
+                    </div>
+                    <div class="rule">
+                        <svg class="rule-check" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                        </svg>
+                        <span>Overtime counts only <strong>after scheduled end time</strong></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Example -->
+            <div class="example-box">
+                <h5>💡 Example:</h5>
+                <p>If your schedule is <strong>10:00 AM - 7:00 PM</strong> (8 hours):</p>
+                <ul>
+                    <li>Arrive at <strong>8:00 AM</strong> → Start counting at 10:00 AM</li>
+                    <li>Leave at <strong>7:00 PM</strong> → Total: <strong>8 hours</strong></li>
+                    <li>Leave at <strong>8:00 PM</strong> → Total: <strong>9 hours</strong> (1h overtime)</li>
+                </ul>
+            </div>
+
+            <!-- Emergency Override -->
+            <div class="emergency-card" id="emergencyOverrideCard">
+                <div class="emergency-header">
+                    <span class="emergency-badge">🚨 Emergency Only</span>
+                    <h5>Need Early Hours Counted?</h5>
+                </div>
+                <p>If you have a legitimate emergency reason (family emergency, urgent task, make-up hours), you can request admin approval.</p>
+                <button class="btn btn-warning" onclick="openOverrideRequest()" id="requestOverrideModalBtn">
+                    📝 Request Admin Approval
+                </button>
+            </div>
+
+        </div>
+
+        <div class="modal-actions">
+            <button class="btn btn-primary" onclick="closeEarlyArrivalModal()">
+                I Understand
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Schedule Override Request Modal -->
+<div id="scheduleOverrideModal" class="modal">
+    <div class="modal-content">
+        <button class="modal-close" onclick="closeScheduleOverrideModal()">×</button>
+        <div class="modal-header">
+            <h3>🚨 Request Early Work Approval</h3>
+            <p>Explain why you need to work earlier than scheduled</p>
+        </div>
+        <form id="scheduleOverrideForm" onsubmit="submitScheduleOverride(event)">
+            <div class="form-group">
+                <label for="overrideReason">Reason for Early Work:</label>
+                <textarea id="overrideReason" name="overrideReason"
+                          placeholder="Example: Family emergency, urgent client request, make-up hours, etc."
+                          required minlength="10" rows="4"></textarea>
+                <small style="color: var(--text-muted); font-size: 0.85rem;">Minimum 10 characters. Be specific and honest.</small>
+            </div>
+
+            <div class="alert alert-info" style="margin-bottom: 1rem; font-size: 0.9rem;">
+                <strong>ℹ️ Note:</strong> Your request will be reviewed by admin. You'll be notified of their decision.
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeScheduleOverrideModal()">Cancel</button>
+                <button type="submit" class="btn btn-warning">Submit Request</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Help Guide Modal -->
+<div id="helpGuideModal" class="modal">
+    <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;">
+        <button class="modal-close" onclick="closeHelpGuide()">×</button>
+        <div class="modal-header">
+            <h3>📚 Student Guide & Help Center</h3>
+            <p>Everything you need to know about the Attendance System</p>
+        </div>
+
+        <div class="help-guide-content">
+
+            <!-- Getting Started -->
+            <div class="help-section">
+                <div class="help-section-header">
+                    <div class="help-icon-wrapper">🚀</div>
+                    <h4>Getting Started</h4>
+                </div>
+                <div class="help-section-body">
+                    <div class="help-step">
+                        <span class="step-number">1</span>
+                        <div class="step-content">
+                            <strong>First Time Registration</strong>
+                            <p>Enter your 4-digit ID badge → System will prompt registration → Fill in your full name and school → Set up Google Authenticator</p>
+                        </div>
+                    </div>
+                    <div class="help-step">
+                        <span class="step-number">2</span>
+                        <div class="step-content">
+                            <strong>Google Authenticator Setup</strong>
+                            <p>Install the app → Scan QR code → Enter the 6-digit code to verify → You're all set!</p>
+                        </div>
+                    </div>
+                    <div class="help-step">
+                        <span class="step-number">3</span>
+                        <div class="step-content">
+                            <strong>Daily Time In/Out</strong>
+                            <p>Enter your ID badge → Click "Time In" or "Time Out" → Enter your Authenticator code → Done!</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Task Management -->
+            <div class="help-section">
+                <div class="help-section-header">
+                    <div class="help-icon-wrapper">📋</div>
+                    <h4>Task Management</h4>
+                </div>
+                <div class="help-section-body">
+                    <ul class="help-list">
+                        <li>
+                            <strong>Adding Tasks During Work:</strong>
+                            <p>Click the "➕ Add Task" button while timed in → Use presets or type manually → Tasks are saved in real-time</p>
+                        </li>
+                        <li>
+                            <strong>Using Task Presets:</strong>
+                            <p>Click "🎯 Quick Select from Presets" → Choose IT Tasks or Rooms → Select multiple tasks → Click "Insert Selected"</p>
+                        </li>
+                        <li>
+                            <strong>Multiple Tasks at Once:</strong>
+                            <p>Type each task on a new line (press Shift + Enter) → All tasks will be logged separately</p>
+                        </li>
+                        <li>
+                            <strong>Time Out Requirement:</strong>
+                            <p>You MUST log at least one task before timing out. Review your tasks when timing out.</p>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Dashboard & Reports -->
+            <div class="help-section">
+                <div class="help-section-header">
+                    <div class="help-icon-wrapper">📊</div>
+                    <h4>Dashboard & Reports</h4>
+                </div>
+                <div class="help-section-body">
+                    <ul class="help-list">
+                        <li>
+                            <strong>View Dashboard:</strong>
+                            <p>Click "View Dashboard" → See your hours, progress, and recent attendance history</p>
+                        </li>
+                        <li>
+                            <strong>Weekly Reports (PDF):</strong>
+                            <p>Dashboard → "📄 Weekly Report" → Select week or date range → Download PDF</p>
+                        </li>
+                        <li>
+                            <strong>Full Report (CSV):</strong>
+                            <p>Dashboard → "📊 Full Report (CSV)" → Opens in Excel or Google Sheets</p>
+                        </li>
+                        <li>
+                            <strong>Progress Tracking:</strong>
+                            <p>Your dashboard shows total hours vs required hours with a visual progress bar and estimated days to completion</p>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Schedule & Early Arrival -->
+            <div class="help-section">
+                <div class="help-section-header">
+                    <div class="help-icon-wrapper">⏰</div>
+                    <h4>Schedule & Early Arrival Policy</h4>
+                </div>
+                <div class="help-section-body">
+                    <ul class="help-list">
+                        <li>
+                            <strong>Work Schedule:</strong>
+                            <p>Your admin sets your daily schedule (e.g., 10:00 AM - 7:00 PM). Only hours within this schedule count.</p>
+                        </li>
+                        <li>
+                            <strong>Early Arrival:</strong>
+                            <p>⚠️ If you arrive more than 45 minutes early, those early hours DON'T count unless approved by admin.</p>
+                        </li>
+                        <li>
+                            <strong>Emergency Override Request:</strong>
+                            <p>If you have a valid reason (family emergency, make-up hours), click the info icon → Request Admin Approval → Explain your situation</p>
+                        </li>
+                        <li>
+                            <strong>Overtime:</strong>
+                            <p>Working beyond your scheduled end time counts as overtime and is automatically tracked!</p>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Common Issues & Solutions -->
+            <div class="help-section">
+                <div class="help-section-header">
+                    <div class="help-icon-wrapper">🔧</div>
+                    <h4>Common Issues & Solutions</h4>
+                </div>
+                <div class="help-section-body">
+                    <div class="help-faq">
+                        <div class="faq-item">
+                            <strong>❓ Lost or Replaced Badge ID?</strong>
+                            <p class="faq-answer">
+                                <span class="highlight-text">Approach your senior immediately</span> to update your Badge ID in the system. You cannot time in/out with an old badge number.
+                            </p>
+                        </div>
+                        <div class="faq-item">
+                            <strong>❓ Want to Change Your Schedule?</strong>
+                            <p class="faq-answer">
+                                <span class="highlight-text">Ask your seniors</span> to adjust your work schedule. Only admins can modify schedule settings.
+                            </p>
+                        </div>
+                        <div class="faq-item">
+                            <strong>❓ Lost Authenticator Access?</strong>
+                            <p class="faq-answer">
+                                Contact your senior to reset your TOTP authentication. You'll need to set it up again with a new QR code.
+                            </p>
+                        </div>
+                        <div class="faq-item">
+                            <strong>❓ Forgot to Time Out?</strong>
+                            <p class="faq-answer">
+                                The system auto times-out at midnight. Contact your senior to correct your attendance if needed.
+                            </p>
+                        </div>
+                        <div class="faq-item">
+                            <strong>❓ Can't Add Tasks?</strong>
+                            <p class="faq-answer">
+                                The "Add Task" button only appears when you're timed in. Make sure you've completed Time In first.
+                            </p>
+                        </div>
+                        <div class="faq-item">
+                            <strong>❓ Dashboard Not Loading?</strong>
+                            <p class="faq-answer">
+                                Check your internet connection and refresh the page. If issue persists, contact your senior.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Important Reminders -->
+            <div class="help-section reminder-section">
+                <div class="help-section-header">
+                    <div class="help-icon-wrapper">⚡</div>
+                    <h4>Important Reminders</h4>
+                </div>
+                <div class="help-section-body">
+                    <div class="reminder-grid">
+                        <div class="reminder-card">
+                            <div class="reminder-icon">🔐</div>
+                            <strong>Keep Your Code Safe</strong>
+                            <p>Never share your Authenticator code or let others use your badge</p>
+                        </div>
+                        <div class="reminder-card">
+                            <div class="reminder-icon">✅</div>
+                            <strong>Log Tasks Daily</strong>
+                            <p>Don't wait until time-out. Add tasks throughout the day</p>
+                        </div>
+                        <div class="reminder-card">
+                            <div class="reminder-icon">⏱️</div>
+                            <strong>Follow Your Schedule</strong>
+                            <p>Arrive on time and work your full scheduled hours</p>
+                        </div>
+                        <div class="reminder-card">
+                            <div class="reminder-icon">📱</div>
+                            <strong>Keep Authenticator Updated</strong>
+                            <p>Don't uninstall the app or change phones without backup</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Need More Help -->
+            <div class="help-section contact-section">
+                <div class="help-section-header">
+                    <div class="help-icon-wrapper">💬</div>
+                    <h4>Still Need Help?</h4>
+                </div>
+                <div class="help-section-body">
+                    <div class="contact-info">
+                        <p style="text-align: center; margin-bottom: 1rem; color: var(--text-secondary);">
+                            Don't hesitate to reach out to your seniors or IT team
+                        </p>
+                        <div class="contact-buttons">
+                            <button class="btn btn-primary" onclick="closeHelpGuide()">
+                                ✓ Got It, Thanks!
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
 <!-- Loading Spinner -->
 <div id="loading" class="loading">
     <div class="spinner"></div>
@@ -482,7 +1105,7 @@
                     <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" class="info-icon">
                         <path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
                     </svg>
-                    Hover for Info
+                    System & Credits Info
                 </span>
             </button>
 
@@ -505,7 +1128,7 @@
                             <svg viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
                                 <path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" fill-rule="evenodd"></path>
                             </svg>
-                            <span>Version 2.0.5</span>
+                            <span>Version 2.1.5</span>
                         </div>
                         <button class="info-tooltip-button" onclick="showAboutModal()">
                             View Full Credits
@@ -527,5 +1150,6 @@
 <script src="index.js"></script>
 <script src="notification.js"></script>
 <script src="credits.js"></script>
+<script src="chatbot.js"></script>
 </body>
 </html>

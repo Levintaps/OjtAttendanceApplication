@@ -53,6 +53,11 @@ function setupEventListeners() {
     setupModalListeners();
 }
 
+function clearEarlyArrivalState() {
+    earlyArrivalData = null;
+    hideScheduleInfo();
+}
+
 function setupIdInputListeners() {
     const idInput = elements.idBadge();
 
@@ -62,6 +67,8 @@ function setupIdInputListeners() {
             this.value = this.value.slice(0, 4);
         }
         hideValidationWarning();
+
+        clearEarlyArrivalState();
 
         if (this.value.length === 4) {
             checkStudentStatus(this.value);
@@ -129,6 +136,38 @@ function setupModalListeners() {
     });
 }
 
+// Help Guide Functions
+function showHelpGuide() {
+    const modal = document.getElementById('helpGuideModal');
+    modal.classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeHelpGuide() {
+    const modal = document.getElementById('helpGuideModal');
+    modal.classList.remove('show');
+    document.body.style.overflow = '';
+}
+
+// Add click outside to close for help guide modal
+document.addEventListener('click', function(event) {
+    const helpModal = document.getElementById('helpGuideModal');
+    const dashboardModal = document.getElementById('dashboardModal');
+
+    // Check if help modal is open and click is outside modal-content
+    if (helpModal &&
+        helpModal.classList.contains('show') &&
+        event.target === helpModal) {
+        closeHelpGuide();
+    }
+
+    if (dashboardModal &&
+        dashboardModal.classList.contains('show') &&
+        event.target === dashboardModal) {
+        closeDashboardModal();
+    }
+});
+
 // Time and Status Management
 function updateCurrentTime() {
     const now = new Date();
@@ -150,10 +189,13 @@ async function checkStudentStatus(idBadge) {
         return;
     }
 
+    earlyArrivalData = null;
+    hideScheduleInfo();
+
     try {
         // First check TOTP status
         const totpResponse = await fetch(`${API_BASE_URL}/totp/status/${idBadge}`);
-        
+
         if (!totpResponse.ok) {
             if (totpResponse.status === 404) {
                 showRegisterPrompt(idBadge);
@@ -164,7 +206,7 @@ async function checkStudentStatus(idBadge) {
         }
 
         const totpData = await totpResponse.json();
-        
+
         // If TOTP requires setup, show setup flow
         if (totpData.requiresSetup || !totpData.totpEnabled) {
             await showTotpSetup(idBadge, totpData);
@@ -214,7 +256,7 @@ async function checkStudentStatus(idBadge) {
 async function showTotpSetup(idBadge, totpData) {
     try {
         showLoading();
-        
+
         // Generate TOTP secret and QR code
         const setupResponse = await fetch(`${API_BASE_URL}/totp/setup/${idBadge}`, {
             method: 'POST'
@@ -225,7 +267,7 @@ async function showTotpSetup(idBadge, totpData) {
         }
 
         const setupData = await setupResponse.json();
-        
+
         hideLoading();
         displayTotpSetupModal(setupData);
 
@@ -237,19 +279,19 @@ async function showTotpSetup(idBadge, totpData) {
 
 function displayTotpSetupModal(setupData) {
     const modal = document.getElementById('totpSetupModal') || createTotpSetupModal();
-    
+
     const qrImage = modal.querySelector('#totpQrCode');
     const secretText = modal.querySelector('#totpSecretText');
-    
+
     qrImage.src = setupData.qrCodeDataUrl;
     secretText.textContent = setupData.secret;
-    
+
     currentTotpStudent = setupData;
     totpSetupInProgress = true;
-    
+
     modal.classList.add('show');
     document.body.style.overflow = 'hidden';
-    
+
     modal.querySelector('#totpVerifyCode').focus();
 }
 
@@ -275,7 +317,7 @@ function createTotpSetupModal() {
                         <li>Enter the 6-digit code shown in the app</li>
                     </ol>
                 </div>
-                
+
                 <div class="qr-code-container" style="text-align: center; margin: 2rem 0;">
                     <div style="background: white; padding: 2rem; border-radius: var(--border-radius-lg); display: inline-block; box-shadow: var(--shadow-md);">
                         <img id="totpQrCode" src="" alt="QR Code" style="width: 250px; height: 250px; display: block;">
@@ -289,7 +331,7 @@ function createTotpSetupModal() {
                 <form id="totpVerifyForm" onsubmit="verifyTotpSetup(event)">
                     <div class="form-group">
                         <label for="totpVerifyCode">Enter 6-digit code from your app:</label>
-                        <input type="text" id="totpVerifyCode" maxlength="6" placeholder="000000" 
+                        <input type="text" id="totpVerifyCode" maxlength="6" placeholder="000000"
                             style="text-align: center; font-size: 1.5rem; letter-spacing: 0.5em; font-weight: 700;" required>
                     </div>
                     <div class="modal-actions">
@@ -301,20 +343,20 @@ function createTotpSetupModal() {
         </div>
     `;
     document.body.appendChild(modal);
-    
+
     const codeInput = modal.querySelector('#totpVerifyCode');
     codeInput.addEventListener('input', function() {
         this.value = this.value.replace(/\D/g, '').slice(0, 6);
     });
-    
+
     return modal;
 }
 
 async function verifyTotpSetup(event) {
     event.preventDefault();
-    
+
     const totpCode = document.getElementById('totpVerifyCode').value.trim();
-    
+
     if (totpCode.length !== 6) {
         showAlert('Please enter a valid 6-digit code', 'error');
         return;
@@ -335,7 +377,7 @@ async function verifyTotpSetup(event) {
             hideLoading();
             closeTotpSetupModal();
             showAlert('Authentication setup complete! You can now log attendance.', 'success');
-            
+
             setTimeout(() => {
                 checkStudentStatus(currentTotpStudent.idBadge);
             }, 500);
@@ -360,7 +402,7 @@ function closeTotpSetupModal() {
         document.getElementById('totpVerifyForm').reset();
         totpSetupInProgress = false;
         currentTotpStudent = null;
-        
+
         document.getElementById('idBadge').value = '';
         resetButtonStates();
     }
@@ -383,6 +425,7 @@ async function updateButtonStates(studentData = null) {
         timeInBtn.style.display = 'none';
         timeOutBtn.style.display = 'none';
         isTaskLoggingEnabled = false;
+        hideScheduleInfo();
         return;
     }
 
@@ -390,8 +433,14 @@ async function updateButtonStates(studentData = null) {
     statusDisplay.style.background = '';
     statusDisplay.style.border = '';
 
+    if (studentData && studentData.currentStatus === 'TIMED_IN') {
+        await checkEarlyArrival(studentData);
+    } else {
+        hideScheduleInfo();
+    }
+
     if (studentData.currentStatus === 'TIMED_IN') {
-        statusText.textContent = 'Currently Timed In';
+        statusText.textContent = 'On Duty';
         statusText.style.color = 'var(--success-color)';
 
         const activeRecord = studentData.attendanceHistory?.find(record => record.timeIn && !record.timeOut);
@@ -416,30 +465,112 @@ async function updateButtonStates(studentData = null) {
                 console.error('Error checking task logging:', error);
             }
         }
-    } else {
+    }
+
+    else {
         stopTodayHoursTimer();
-        statusText.textContent = 'Ready to Time In';
-        statusText.style.color = 'var(--text-primary)';
-        
+
+        // Get today's completed session
+        const today = new Date().toDateString();
+        const todayRecord = studentData.attendanceHistory?.find(record => {
+            const recordDate = new Date(record.attendanceDate).toDateString();
+            return recordDate === today && record.timeOut != null;
+        });
+
         const totalHours = parseFloat(studentData.totalAccumulatedHours || 0);
         const requiredHours = studentData.requiredHours || 0;
-        
-        if (requiredHours > 0 && totalHours < requiredHours) {
-            const remainingHours = requiredHours - totalHours;
-            const estimate = calculateEstimatedDaysAndHours(remainingHours, studentData);
-            statusTime.innerHTML = `<span style="display: flex; flex-direction: column; align-items: center; gap: 0.25rem;">
-                <span>Estimated: <strong>${estimate.formatted}</strong> to complete</span>
-                <span style="font-size: 0.75rem; color: var(--text-muted);">
-                    ${remainingHours.toFixed(1)} hours remaining
-                </span>
-            </span>`;
-        } else {
-            statusTime.textContent = 'Ready for today\'s session';
+        const hasRequiredHours = requiredHours > 0;
+
+        if (todayRecord && todayRecord.timeOut) {
+            const timeOutDate = new Date(todayRecord.timeOut);
+            const now = new Date();
+            const hoursSinceTimeOut = (now - timeOutDate) / (1000 * 60 * 60);
+
+            if (hoursSinceTimeOut < 4) {
+                statusText.textContent = 'Session Complete';
+                statusText.style.color = 'var(--info-color)';
+
+                const hoursWorked = parseFloat(todayRecord.totalHours || 0);
+                const timeOutTime = formatTime(todayRecord.timeOut);
+
+                statusTime.innerHTML = `
+                    <span style="display: flex; flex-direction: column; align-items: center; gap: 0.25rem;">
+                        <span style="font-weight: 600; color: var(--success-color);">
+                            ✓ Completed ${hoursWorked.toFixed(0)} hours today
+                        </span>
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">
+                            Timed out at ${timeOutTime}
+                        </span>
+                    </span>
+                `;
+            } else {
+                showReadyStatus(hasRequiredHours, totalHours, requiredHours, studentData);
+            }
+        }
+
+        else {
+            showReadyStatus(hasRequiredHours, totalHours, requiredHours, studentData);
         }
 
         timeInBtn.style.display = 'flex';
         timeOutBtn.style.display = 'none';
         isTaskLoggingEnabled = false;
+    }
+}
+
+function showReadyStatus(hasRequiredHours, totalHours, requiredHours, studentData) {
+    const statusText = elements.currentStatusText();
+    const statusTime = elements.currentStatusTime();
+
+    // Check if student has completed their hours
+    if (hasRequiredHours && totalHours >= requiredHours) {
+        statusText.textContent = '🎉 OJT Hours Complete!';
+        statusText.style.color = 'var(--success-color)';
+
+        statusTime.innerHTML = `
+            <span style="display: flex; flex-direction: column; align-items: center; gap: 0.25rem;">
+                <span style="font-weight: 600; color: var(--success-color);">
+                    Congratulations! You've completed all required hours.
+                </span>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">
+                    ${totalHours.toFixed(0)}h / ${requiredHours.toFixed(0)}h (100%)
+                </span>
+            </span>
+        `;
+    }
+    // Show progress towards completion
+    else if (hasRequiredHours && totalHours < requiredHours) {
+        statusText.textContent = 'Ready for Next Session';
+        statusText.style.color = 'var(--text-primary)';
+
+        const remainingHours = requiredHours - totalHours;
+        const estimate = calculateEstimatedDaysAndHours(remainingHours, studentData);
+        const completionPercent = ((totalHours / requiredHours) * 100).toFixed(0);
+
+        statusTime.innerHTML = `
+            <span style="display: flex; flex-direction: column; align-items: center; gap: 0.25rem;">
+                <span style="font-weight: 600; color: var(--primary-color);">
+                    📊 ${completionPercent}% Complete
+                </span>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">
+                    ${remainingHours.toFixed(0)}h remaining • Est. ${estimate.formatted} to complete
+                </span>
+            </span>
+        `;
+    }
+    // No required hours set
+    else {
+        statusText.textContent = 'Ready to Time In';
+        statusText.style.color = 'var(--text-primary)';
+
+        statusTime.innerHTML = `
+            <span style="display: flex; flex-direction: column; align-items: center; gap: 0.25rem;">
+                <span style="font-weight: 500;">Start tracking your hours</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">
+                    Total accumulated: ${totalHours.toFixed(0)}h
+                </span>
+            </span>
+        `;
     }
 }
 
@@ -482,7 +613,7 @@ function createDashboardTabs(studentData) {
                                 return `<span style="display: flex; flex-direction: column; gap: 0.25rem;">
                                     <span style="font-size: 1.4rem;">${estimate.formatted}</span>
                                     <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;">
-                                        ${remainingHours.toFixed(1)}h remaining
+                                        ${remainingHours.toFixed(0)}h remaining
                                     </span>
                                 </span>`;
                             })()
@@ -516,42 +647,16 @@ function createDashboardTabs(studentData) {
     });
 }
 
-function calculateEstimatedDaysAndHours(remainingHours, studentData) {
+function calculateEstimatedDaysAndHours(remainingHours) {
     if (remainingHours <= 0) {
         return { days: 0, hours: 0, formatted: 'Complete!' };
     }
 
-    // Calculate average daily hours from recent attendance
-    let averageDailyHours = STANDARD_WORK_HOURS;
+    const HOURS_PER_DAY = 8;
+    const fullDays = Math.floor(remainingHours / HOURS_PER_DAY);
+    const remainingHoursAfterDays = remainingHours - (fullDays * HOURS_PER_DAY);
+    const roundedHours = Math.floor(remainingHoursAfterDays * 2) / 2;
 
-    if (studentData.attendanceHistory && studentData.attendanceHistory.length > 0) {
-        // Get records from last 2 weeks (up to 14 records)
-        const recentRecords = studentData.attendanceHistory
-            .filter(record => record.totalHours && record.totalHours > 0)
-            .slice(0, 14);
-
-        if (recentRecords.length > 0) {
-            const totalRecentHours = recentRecords.reduce((sum, record) => {
-                return sum + (parseFloat(record.totalHours) || 0);
-            }, 0);
-
-            averageDailyHours = totalRecentHours / recentRecords.length;
-        }
-    }
-
-    // Use at least 4 hours per day, max 8 hours
-    const hoursPerDay = Math.max(Math.min(averageDailyHours, STANDARD_WORK_HOURS), 4);
-
-    // Calculate full days needed
-    const fullDays = Math.floor(remainingHours / hoursPerDay);
-
-    // Calculate remaining hours after full days
-    const remainingHoursAfterDays = remainingHours - (fullDays * hoursPerDay);
-
-    // Round remaining hours to nearest 0.5
-    const roundedHours = Math.round(remainingHoursAfterDays * 2) / 2;
-
-    // Format the result
     let formatted = '';
     if (fullDays > 0 && roundedHours > 0) {
         formatted = `${fullDays}d ${roundedHours}h`;
@@ -567,7 +672,7 @@ function calculateEstimatedDaysAndHours(remainingHours, studentData) {
         days: fullDays,
         hours: roundedHours,
         formatted: formatted,
-        totalDays: fullDays + (roundedHours > 0 ? 1 : 0) // Ceiling days
+        totalDays: fullDays + (roundedHours > 0 ? 1 : 0)
     };
 }
 
@@ -608,6 +713,9 @@ function resetButtonStates() {
         addTaskButton.remove();
         addTaskButton = null;
     }
+
+    earlyArrivalData = null;
+    hideScheduleInfo();
 }
 
 function showRegisterPrompt(idBadge) {
@@ -624,7 +732,7 @@ function showRegisterPrompt(idBadge) {
     statusTime.innerHTML = `<button class="btn btn-primary" onclick="showRegisterModal('${idBadge}')" style="margin-top: 0.5rem; padding: 0.5rem 1rem; font-size: 0.85rem;">Register Now</button>`;
 }
 
-// Attendance Actions - FIXED TIME IN
+// Attendance Actions - TIME IN
 async function performTimeIn() {
     const idBadge = elements.idBadge().value.trim();
 
@@ -638,13 +746,13 @@ async function performTimeIn() {
     showTotpVerificationModal('TIME_IN');
 }
 
-function updateUIAfterTimeIn(data) {
+async function updateUIAfterTimeIn(data) {
     const statusText = elements.currentStatusText();
     const statusTime = elements.currentStatusTime();
     const timeInBtn = elements.timeInBtn();
     const timeOutBtn = elements.timeOutBtn();
 
-    statusText.textContent = 'Currently Timed In';
+    statusText.textContent = 'On Duty';
     statusText.style.color = 'var(--success-color)';
     statusTime.textContent = `Since: ${formatTime(data.timeIn)}`;
 
@@ -655,6 +763,9 @@ function updateUIAfterTimeIn(data) {
 
     // Use SweetAlert2 instead of toast
     showTimeInSuccess(data.studentName, formatTime(data.timeIn));
+
+    const idBadge = elements.idBadge().value.trim();
+    await checkPendingOverrideRequests(idBadge);
 }
 
 // TIME OUT - Shows task summary first, then TOTP
@@ -750,13 +861,12 @@ async function submitWithTotp(event) {
 
         if (response.ok) {
             if (action === 'TIME_IN') {
-                // showAlert(`Welcome ${data.studentName}! Timed in successfully at ${formatTime(data.timeIn)}. Have a productive day!`, 'success');
                 updateUIAfterTimeIn(data);
             } else {
                 handleSuccessfulTimeOut(data);
             }
         } else {
-            showAlert(data.message || 'Authentication failed', 'error');
+            showAlert(data.message || 'Invalid TOPT, Please try again!', 'error');
             if (data.message && data.message.includes('Invalid TOTP')) {
                 setTimeout(() => showTotpVerificationModal(action, tasksCompleted), 1000);
             }
@@ -829,6 +939,8 @@ function handleSuccessfulTimeOut(data) {
 
     clearIdInput();
     clearTaskInput();
+    hideScheduleInfo();
+    clearEarlyArrivalState();
 }
 
 function handleTimeOutError(data) {
@@ -863,8 +975,22 @@ function showAddTaskModal() {
     const modal = document.getElementById('addTaskModal');
     if (modal) {
         const textarea = document.getElementById('taskDescription');
-        textarea.value = '';
+
+        // Load any saved draft
+        loadDraftTask();
+
+        // Load task history for autocomplete
+        loadTaskHistory();
+
+        // If no draft, clear and focus
+        if (!textarea.value) {
+            textarea.value = '';
+        }
         textarea.focus();
+
+        // Add auto-save on input
+        textarea.removeEventListener('input', saveDraftTask);
+        textarea.addEventListener('input', saveDraftTask);
 
         // Add Shift+Enter handler for multiple tasks
         textarea.removeEventListener('keydown', handleTaskTextareaKeydown);
@@ -896,8 +1022,18 @@ function updateTaskModalHelper() {
     if (!document.getElementById('task-helper-text')) {
         const helperText = document.createElement('div');
         helperText.id = 'task-helper-text';
-        helperText.style.cssText = 'font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem; font-style: italic;';
-        helperText.innerHTML = '💡 <strong>Tip:</strong> Press <kbd style="background: var(--bg-tertiary); padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">Shift + Enter</kbd> to add multiple tasks (each line = 1 task)';
+        helperText.style.cssText = 'font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;';
+        helperText.innerHTML = `
+            <span style="font-size: 0.75rem; color: var(--success-color);">✓ Auto-saved • Start typing for suggestions</span>
+            <br><br>
+            <button type="button" class="preset-toggle-btn" onclick="openPresetModal()">
+                <span>🎯</span>
+                <span>Quick Select from Presets</span>
+            </button>
+            <p style="margin-top: 0.5rem; font-style: italic;">
+                💡 <strong>Tip:</strong> Press <kbd style="background: var(--bg-tertiary); padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">Shift + Enter</kbd> for multiple tasks
+            </p>
+        `;
         formGroup.appendChild(helperText);
     }
 }
@@ -925,7 +1061,7 @@ async function submitTask(event) {
     // Split by newlines to handle multiple tasks
     const taskLines = taskDescription.split('\n')
         .map(line => line.trim())
-        .filter(line => line.length >= 5); // Filter out empty or too short lines
+        .filter(line => line.length >= 5);
 
     if (taskLines.length === 0) {
         showAlert('Please enter at least one valid task (minimum 5 characters per task)', 'warning');
@@ -973,6 +1109,11 @@ async function submitTask(event) {
             }
         }
 
+        // **IMPORTANT: Clear draft only after successful submission**
+        if (successCount > 0) {
+            clearDraftTask();
+        }
+
         // Fetch updated dashboard data to get accurate task count
         try {
             const updatedDashboard = await fetch(`${API_BASE_URL}/students/dashboard/${idBadge}`);
@@ -983,13 +1124,10 @@ async function submitTask(event) {
                 hideLoading();
 
                 if (failCount === 0) {
-                    // All tasks succeeded
                     showTaskAddedSuccess(taskCount, taskLines.length);
                 } else if (successCount > 0) {
-                    // Some tasks succeeded
                     showAlert(`${successCount} task(s) added successfully. ${failCount} failed. Total tasks today: ${taskCount}`, 'warning');
                 } else {
-                    // All failed
                     showErrorAlert('Failed to add tasks. Please try again.', 'Failed to Log Tasks');
                 }
 
@@ -1022,6 +1160,67 @@ async function submitTask(event) {
         showErrorAlert('Network error: Unable to connect to server', 'Connection Error');
     }
 }
+
+function saveDraftTask() {
+    const taskDescription = document.getElementById('taskDescription');
+    if (taskDescription) {
+        const draftText = taskDescription.value.trim();
+        if (draftText.length > 0) {
+            localStorage.setItem('draftTask', draftText);
+            // Show visual feedback
+            showDraftSavedIndicator();
+        } else {
+            localStorage.removeItem('draftTask');
+        }
+    }
+}
+
+function showDraftSavedIndicator() {
+    const textarea = document.getElementById('taskDescription');
+    if (!textarea) return;
+
+    // Add a temporary "saved" class for visual feedback
+    textarea.style.borderColor = 'var(--success-color)';
+    setTimeout(() => {
+        textarea.style.borderColor = '';
+    }, 300);
+}
+
+function loadDraftTask() {
+    const taskDescription = document.getElementById('taskDescription');
+    const draftText = localStorage.getItem('draftTask');
+
+    if (draftText && taskDescription) {
+        taskDescription.value = draftText;
+
+        // Show a notification that draft was restored
+        const formGroup = taskDescription.closest('.form-group');
+        if (formGroup && !document.getElementById('draft-restored-msg')) {
+            const draftMsg = document.createElement('div');
+            draftMsg.id = 'draft-restored-msg';
+            draftMsg.style.cssText = `
+                font-size: 0.85rem;
+                color: var(--success-color);
+                margin-top: 0.5rem;
+                font-style: italic;
+                animation: fadeIn 0.3s ease-out;
+            `;
+            draftMsg.innerHTML = '✓ Draft restored';
+            formGroup.appendChild(draftMsg);
+
+            // Remove message after 3 seconds
+            setTimeout(() => {
+                draftMsg.remove();
+            }, 3000);
+        }
+    }
+}
+
+function clearDraftTask() {
+    localStorage.removeItem('draftTask');
+}
+
+
 
 async function getCurrentSessionTasks(idBadge) {
     try {
@@ -1105,6 +1304,7 @@ async function viewDashboard() {
         const data = await response.json();
         await displayDashboard(data);
         showAlert(`Welcome back, ${data.fullName}! Dashboard loaded successfully.`, 'info');
+        addOverrideRequestsButton();
 
     } catch (error) {
         showAlert(error.message, 'error');
@@ -1136,7 +1336,39 @@ async function displayDashboard(data) {
     const activeRecord = data.attendanceHistory?.find(record => record.timeIn && !record.timeOut);
     const actualStatus = activeRecord ? 'TIMED_IN' : (data.currentStatus || 'TIMED_OUT');
 
-    currentStatus.textContent = actualStatus;
+    if (actualStatus === 'TIMED_IN') {
+        currentStatus.textContent = 'Currently Working';
+        currentStatus.style.color = 'var(--success-color)';
+        currentStatus.style.fontWeight = '600';
+    } else {
+        // Check if worked today
+        const today = new Date().toDateString();
+        const todayRecord = data.attendanceHistory?.find(record => {
+            const recordDate = new Date(record.attendanceDate).toDateString();
+            return recordDate === today && record.timeOut != null;
+        });
+
+        if (todayRecord && todayRecord.timeOut) {
+            const timeOutDate = new Date(todayRecord.timeOut);
+            const now = new Date();
+            const hoursSinceTimeOut = (now - timeOutDate) / (1000 * 60 * 60);
+
+            if (hoursSinceTimeOut < 4) {
+                const hoursWorked = parseFloat(todayRecord.totalHours || 0);
+                currentStatus.textContent = `✓ Completed Today (${hoursWorked.toFixed(0)}h)`;
+                currentStatus.style.color = 'var(--info-color)';
+                currentStatus.style.fontWeight = '600';
+            } else {
+                currentStatus.textContent = 'Ready to Time In';
+                currentStatus.style.color = 'var(--text-secondary)';
+                currentStatus.style.fontWeight = '500';
+            }
+        } else {
+            currentStatus.textContent = 'Ready to Time In';
+            currentStatus.style.color = 'var(--text-secondary)';
+            currentStatus.style.fontWeight = '500';
+        }
+    }
 
     let studentFullData = data;
     try {
@@ -1152,7 +1384,7 @@ async function displayDashboard(data) {
         console.error('Failed to fetch student full data:', error);
     }
 
-const totalHoursValue = parseFloat(studentFullData.totalAccumulatedHours || 0);
+    const totalHoursValue = parseFloat(studentFullData.totalAccumulatedHours || 0);
     const requiredHoursValue = studentFullData.requiredHours ? parseFloat(studentFullData.requiredHours) : 0;
     const hasRequiredHours = requiredHoursValue > 0;
 
@@ -1181,13 +1413,13 @@ const totalHoursValue = parseFloat(studentFullData.totalAccumulatedHours || 0);
 
             if (hasRequiredHours && totalHoursValue < requiredHoursValue) {
                 const remainingHours = requiredHoursValue - totalHoursValue;
-                const estimatedDays = calculateEstimatedDays(remainingHours, studentFullData);
-                dynamicLabel.textContent = 'Days to Complete';
-                dynamicValue.textContent = `${estimatedDays} day(s)`;
+                const estimate = calculateEstimatedDaysAndHours(remainingHours, studentFullData);
+                dynamicLabel.textContent = 'Est. Time to Complete';
+                dynamicValue.textContent = estimate.formatted;
                 dynamicValue.style.color = 'var(--info-color)';
             } else if (hasRequiredHours && totalHoursValue >= requiredHoursValue) {
                 dynamicLabel.textContent = 'Status';
-                dynamicValue.textContent = 'Complete!';
+                dynamicValue.textContent = '🎉 Complete!';
                 dynamicValue.style.color = 'var(--success-color)';
             } else {
                 dynamicLabel.textContent = 'Required Hours';
@@ -1207,8 +1439,8 @@ const totalHoursValue = parseFloat(studentFullData.totalAccumulatedHours || 0);
 
     if (hasRequiredHours) {
         const progressPercent = Math.min((totalHoursValue / requiredHoursValue) * 100, 100);
-        progressFill.style.width = progressPercent.toFixed(1) + '%';
-        progressPercentage.textContent = progressPercent.toFixed(1) + '%';
+        progressFill.style.width = progressPercent.toFixed(0) + '%';
+        progressPercentage.textContent = progressPercent.toFixed(0) + '%';
 
         const progressClass = getProgressClass(progressPercent);
         progressFill.className = `progress-fill-dashboard ${progressClass}`;
@@ -1372,7 +1604,7 @@ function displayAttendanceHistory(history) {
                 const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
                 hoursDisplay = `<strong>${hours}h ${minutes}m ${seconds}s</strong>`;
             } else {
-                hoursDisplay = `<strong>${record.totalHours || '0.0'}h</strong>${record.breakDeducted ? ' (-1h)' : ''}`;
+                hoursDisplay = `<strong>${record.totalHours || '0.0'}h</strong>`;
             }
 
             return `
@@ -1445,6 +1677,7 @@ function hideDashboard() {
 
 function closeDashboardModal() {
     hideDashboard();
+    clearEarlyArrivalState();
 }
 
 // Modal Management
@@ -1700,6 +1933,8 @@ function clearIdInput() {
     elements.idBadge().value = '';
     resetButtonStates();
     hideDashboard();
+    hideScheduleInfo();
+    clearEarlyArrivalState();
     elements.idBadge().focus();
 }
 
@@ -1887,8 +2122,22 @@ async function showWeeklyReportOptions() {
             throw new Error('Student not found');
         }
 
+        // FIXED: Use first attendance date if OJT start date not set
+        let ojtStartDate;
+        if (currentStudent.ojtStartDate) {
+            ojtStartDate = new Date(currentStudent.ojtStartDate);
+        } else if (studentData.attendanceHistory && studentData.attendanceHistory.length > 0) {
+            // Get earliest attendance date
+            const dates = studentData.attendanceHistory.map(r => new Date(r.attendanceDate));
+            ojtStartDate = new Date(Math.min(...dates));
+        } else {
+            hideLoading();
+            showAlert('No attendance records found. Please complete at least one session first.', 'warning');
+            return;
+        }
+
         hideLoading();
-        displayWeeklyReportModal(currentStudent);
+        displayWeeklyReportModal(currentStudent, ojtStartDate);
 
     } catch (error) {
         hideLoading();
@@ -1896,8 +2145,9 @@ async function showWeeklyReportOptions() {
     }
 }
 
-function displayWeeklyReportModal(student) {
-    const ojtStartDate = student.ojtStartDate ? new Date(student.ojtStartDate) : new Date(student.registrationDate);
+function displayWeeklyReportModal(student, ojtStartDate) {
+    // ojtStartDate is now passed as parameter (already calculated)
+    const firstMonday = getNextOrSameMonday(ojtStartDate);
     const totalWeeks = calculateTotalCalendarWeeks(ojtStartDate);
 
     const modalHTML = `
@@ -1914,7 +2164,7 @@ function displayWeeklyReportModal(student) {
                             <strong>OJT Start Date:</strong> ${formatRegistrationDate(ojtStartDate)}
                         </div>
                         <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
-                            <strong>First Week Monday:</strong> ${formatRegistrationDate(getMondayOfWeek(ojtStartDate))}
+                            <strong>First Week Monday:</strong> ${formatRegistrationDate(firstMonday)}
                         </div>
                         <div style="font-size: 0.9rem; color: var(--text-secondary);">
                             <strong>Available Weeks:</strong> Week 1 to Week ${totalWeeks}
@@ -1966,6 +2216,21 @@ function displayWeeklyReportModal(student) {
     });
 
     updateWeekRange(ojtStartDate, 1);
+}
+
+function getNextOrSameMonday(date) {
+    const d = new Date(date);
+    const day = d.getDay();
+
+    // If already Monday, return same day
+    if (day === 1) {
+        return d;
+    }
+
+    // Calculate days until next Monday
+    const daysUntilMonday = day === 0 ? 1 : (8 - day);
+    d.setDate(d.getDate() + daysUntilMonday);
+    return d;
 }
 
 function calculateTotalCalendarWeeks(ojtStartDate) {
@@ -2267,6 +2532,1329 @@ function getCurrentWeekDates() {
     const formatDate = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
     return `${formatDate(monday)} - ${formatDate(sunday)}`;
+}
+
+
+
+
+// ============================================
+// PRESET MODAL FUNCTIONALITY
+// ============================================
+
+let selectedPresets = [];
+let taskHistory = [];
+let selectedRoom = null;
+
+// Open Preset Modal
+function openPresetModal() {
+    const modal = document.getElementById('taskPresetModal');
+    modal.classList.add('show');
+    document.body.style.overflow = 'hidden';
+
+    // Load task history from localStorage or backend
+    loadTaskHistory();
+}
+
+// Close Preset Modal
+function closePresetModal() {
+    const modal = document.getElementById('taskPresetModal');
+    modal.classList.remove('show');
+    document.body.style.overflow = '';
+}
+
+// Toggle Category
+function toggleCategory(categoryId) {
+    const content = document.getElementById(categoryId);
+    const header = content.previousElementSibling;
+
+    // Close all other categories
+    document.querySelectorAll('.category-content').forEach(cat => {
+        if (cat.id !== categoryId) {
+            cat.classList.remove('show');
+            cat.previousElementSibling.classList.remove('active');
+        }
+    });
+
+    // Toggle current category
+    content.classList.toggle('show');
+    header.classList.toggle('active');
+}
+
+// Select Preset
+function selectPreset(taskText) {
+    const index = selectedPresets.indexOf(taskText);
+
+    if (index > -1) {
+        // Deselect
+        selectedPresets.splice(index, 1);
+    } else {
+        // Select
+        selectedPresets.push(taskText);
+    }
+
+    updateSelectedPreview();
+    updatePresetButtons();
+}
+
+function selectRoom(roomName) {
+    const allRoomButtons = document.querySelectorAll('.room-buttons .preset-btn');
+
+    // If clicking the same room, deselect it
+    if (selectedRoom === roomName) {
+        selectedRoom = null;
+        allRoomButtons.forEach(btn => btn.classList.remove('selected'));
+    } else {
+        // Select new room
+        selectedRoom = roomName;
+
+        // Update visual state
+        allRoomButtons.forEach(btn => {
+            const btnRoom = btn.getAttribute('onclick').match(/'([^']+)'/)[1];
+            if (btnRoom === roomName) {
+                btn.classList.add('selected');
+            } else {
+                btn.classList.remove('selected');
+            }
+        });
+    }
+
+    updateSelectedPreview();
+}
+
+// Update Selected Preview
+function updateSelectedPreview() {
+    const preview = document.getElementById('selectedPreview');
+    const list = document.getElementById('selectedList');
+
+    const hasSelections = selectedPresets.length > 0 || selectedRoom !== null;
+
+    if (!hasSelections) {
+        preview.style.display = 'none';
+        return;
+    }
+
+    preview.style.display = 'block';
+
+    let items = [];
+
+    // Show selected tasks
+    if (selectedPresets.length > 0) {
+        items = selectedPresets.map(task => {
+            const displayText = selectedRoom ? `${task} | ${selectedRoom}` : task;
+            return `
+                <div class="selected-item">
+                    <span>${displayText}</span>
+                    <button onclick="selectPreset('${task.replace(/'/g, "\\'")}')">×</button>
+                </div>
+            `;
+        });
+    }
+
+    // Show selected room separately if no tasks selected
+    if (selectedRoom && selectedPresets.length === 0) {
+        items.push(`
+            <div class="selected-item room-only">
+                <span>📍 ${selectedRoom}</span>
+                <button onclick="selectRoom('${selectedRoom.replace(/'/g, "\\'")}')">×</button>
+            </div>
+        `);
+    }
+
+    list.innerHTML = items.join('');
+}
+
+// Update Preset Button States
+function updatePresetButtons() {
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+        const text = btn.textContent;
+        const fullText = btn.getAttribute('onclick').match(/'([^']+)'/)[1];
+
+        if (selectedPresets.includes(fullText)) {
+            btn.classList.add('selected');
+        } else {
+            btn.classList.remove('selected');
+        }
+    });
+}
+
+// Clear Selected Presets
+function clearSelectedPresets() {
+    selectedPresets = [];
+    selectedRoom = null;
+    updateSelectedPreview();
+    updatePresetButtons();
+
+    // Clear room button states
+    document.querySelectorAll('.room-buttons .preset-btn').forEach(btn => {
+        btn.classList.remove('selected');
+    });
+}
+
+// Insert Presets to Task Textarea
+function insertPresetsToTask() {
+    const taskDescription = document.getElementById('taskDescription');
+    const currentText = taskDescription.value.trim();
+
+    if (selectedPresets.length === 0 && !selectedRoom) {
+        showAlert('Please select at least one task or room', 'warning');
+        return;
+    }
+
+    let tasksToInsert = [];
+
+    if (selectedPresets.length > 0) {
+        // Format tasks with room if room is selected
+        tasksToInsert = selectedPresets.map(task => {
+            return selectedRoom ? `${task} | ${selectedRoom}` : task;
+        });
+    } else if (selectedRoom) {
+        // Only room selected, just add the room name
+        tasksToInsert = [selectedRoom];
+    }
+
+    const presetsText = tasksToInsert.join('\n');
+
+    if (currentText) {
+        taskDescription.value = currentText + '\n' + presetsText;
+    } else {
+        taskDescription.value = presetsText;
+    }
+
+    // Clear selections
+    const count = tasksToInsert.length;
+    clearSelectedPresets();
+    closePresetModal();
+
+    // Show success feedback
+    showAlert(`${count} task(s) added!`, 'success');
+
+    // Save draft
+    saveDraftTask();
+}
+
+// Filter Presets by Search
+function filterPresets() {
+    const searchTerm = document.getElementById('presetSearch').value.toLowerCase();
+    const allButtons = document.querySelectorAll('.preset-btn');
+    const allSubcategories = document.querySelectorAll('.preset-subcategory');
+    const allCategories = document.querySelectorAll('.preset-category');
+
+    if (!searchTerm) {
+        // Show all
+        allButtons.forEach(btn => btn.style.display = '');
+        allSubcategories.forEach(sub => sub.style.display = '');
+        allCategories.forEach(cat => cat.style.display = '');
+        return;
+    }
+
+    // Filter buttons
+    allButtons.forEach(btn => {
+        const text = btn.textContent.toLowerCase();
+        const onclick = btn.getAttribute('onclick').toLowerCase();
+
+        if (text.includes(searchTerm) || onclick.includes(searchTerm)) {
+            btn.style.display = '';
+        } else {
+            btn.style.display = 'none';
+        }
+    });
+
+    // Hide empty subcategories
+    allSubcategories.forEach(sub => {
+        const visibleButtons = sub.querySelectorAll('.preset-btn:not([style*="display: none"])');
+        sub.style.display = visibleButtons.length > 0 ? '' : 'none';
+    });
+
+    // Hide empty categories
+    allCategories.forEach(cat => {
+        const visibleSubs = cat.querySelectorAll('.preset-subcategory:not([style*="display: none"])');
+        const visibleRoomButtons = cat.querySelectorAll('.room-buttons .preset-btn:not([style*="display: none"])');
+
+        cat.style.display = (visibleSubs.length > 0 || visibleRoomButtons.length > 0) ? '' : 'none';
+
+        // Auto-expand categories with results
+        if (visibleSubs.length > 0 || visibleRoomButtons.length > 0) {
+            const content = cat.querySelector('.category-content');
+            const header = cat.querySelector('.category-header');
+            content.classList.add('show');
+            header.classList.add('active');
+        }
+    });
+}
+
+// ============================================
+// AUTOCOMPLETE FUNCTIONALITY
+// ============================================
+
+let autocompleteIndex = -1;
+
+// Setup autocomplete on task textarea
+function setupTaskAutocomplete() {
+    const taskTextarea = document.getElementById('taskDescription');
+
+    if (!taskTextarea) return;
+
+    // Create autocomplete dropdown
+    const wrapper = document.createElement('div');
+    wrapper.className = 'task-input-wrapper';
+    taskTextarea.parentNode.insertBefore(wrapper, taskTextarea);
+    wrapper.appendChild(taskTextarea);
+
+    const dropdown = document.createElement('div');
+    dropdown.id = 'taskAutocomplete';
+    dropdown.className = 'autocomplete-dropdown';
+    wrapper.appendChild(dropdown);
+
+    // Listen for input
+    taskTextarea.addEventListener('input', handleAutocompleteInput);
+    taskTextarea.addEventListener('keydown', handleAutocompleteKeyboard);
+
+    // Close on click outside
+    document.addEventListener('click', (e) => {
+        if (!wrapper.contains(e.target)) {
+            dropdown.classList.remove('show');
+        }
+    });
+}
+
+// Handle Autocomplete Input
+function handleAutocompleteInput(e) {
+    const textarea = e.target;
+    const dropdown = document.getElementById('taskAutocomplete');
+    const value = textarea.value;
+
+    // Get current line being typed
+    const cursorPos = textarea.selectionStart;
+    const textBeforeCursor = value.substring(0, cursorPos);
+    const currentLine = textBeforeCursor.split('\n').pop();
+
+    if (currentLine.length < 2) {
+        dropdown.classList.remove('show');
+        return;
+    }
+
+    // Search task history with cleaned text
+    const matches = taskHistory.filter(task =>
+        task.toLowerCase().includes(currentLine.toLowerCase())
+    ).slice(0, 8); // Show top 8 matches
+
+    if (matches.length === 0) {
+        dropdown.classList.remove('show');
+        return;
+    }
+
+    // Show suggestions WITHOUT timestamps or system messages
+    dropdown.innerHTML = matches.map((task, index) => `
+        <div class="autocomplete-item" data-index="${index}" onclick="selectAutocomplete(\`${task.replace(/`/g, '\\`')}\`)">
+            <span>${task}</span>
+            <span class="autocomplete-meta">Previously used</span>
+        </div>
+    `).join('');
+
+    dropdown.classList.add('show');
+    autocompleteIndex = -1;
+}
+
+// Handle Autocomplete Keyboard Navigation
+function handleAutocompleteKeyboard(e) {
+    const dropdown = document.getElementById('taskAutocomplete');
+    if (!dropdown.classList.contains('show')) return;
+
+    const items = dropdown.querySelectorAll('.autocomplete-item');
+    if (items.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        autocompleteIndex = Math.min(autocompleteIndex + 1, items.length - 1);
+        updateAutocompleteSelection(items);
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        autocompleteIndex = Math.max(autocompleteIndex - 1, 0);
+        updateAutocompleteSelection(items);
+    } else if (e.key === 'Enter' && autocompleteIndex >= 0) {
+        e.preventDefault();
+        items[autocompleteIndex].click();
+    } else if (e.key === 'Escape') {
+        dropdown.classList.remove('show');
+    }
+}
+
+// Update Autocomplete Selection Visual
+function updateAutocompleteSelection(items) {
+    items.forEach((item, index) => {
+        if (index === autocompleteIndex) {
+            item.classList.add('selected');
+            item.scrollIntoView({ block: 'nearest' });
+        } else {
+            item.classList.remove('selected');
+        }
+    });
+}
+
+// Select Autocomplete Item
+function selectAutocomplete(taskText) {
+    const textarea = document.getElementById('taskDescription');
+    const value = textarea.value;
+    const cursorPos = textarea.selectionStart;
+
+    // Get text before and after cursor
+    const textBefore = value.substring(0, cursorPos);
+    const textAfter = value.substring(cursorPos);
+
+    // Replace current line with selected task
+    const lines = textBefore.split('\n');
+    lines[lines.length - 1] = taskText;
+
+    textarea.value = lines.join('\n') + textAfter;
+
+    // Move cursor to end of inserted text
+    const newCursorPos = lines.join('\n').length;
+    textarea.setSelectionRange(newCursorPos, newCursorPos);
+    textarea.focus();
+
+    // Hide dropdown
+    document.getElementById('taskAutocomplete').classList.remove('show');
+
+    // Save draft
+    saveDraftTask();
+}
+
+// Load Task History from Backend
+async function loadTaskHistory() {
+    const idBadge = document.getElementById('idBadge').value.trim();
+    if (!idBadge) return;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/students/dashboard/${idBadge}`);
+        if (response.ok) {
+            const data = await response.json();
+
+            // Extract and clean tasks from attendance history
+            const tasks = new Set();
+
+            if (data.attendanceHistory) {
+                data.attendanceHistory.forEach(record => {
+                    if (record.tasksCompleted) {
+                        // Split by newlines and clean each task
+                        const taskLines = record.tasksCompleted.split('\n')
+                            .map(line => line.trim())
+                            .filter(line => line.length > 0);
+
+                        taskLines.forEach(task => {
+                            const cleanTask = cleanTaskText(task);
+                            if (cleanTask && cleanTask.length > 5) {
+                                tasks.add(cleanTask);
+                            }
+                        });
+                    }
+                });
+            }
+
+            // Convert to array and sort (most recent first, but you can change sorting)
+            taskHistory = Array.from(tasks);
+
+            // Store in localStorage for offline access
+            localStorage.setItem(`taskHistory_${idBadge}`, JSON.stringify(taskHistory));
+
+            console.log('Task history loaded:', taskHistory.length, 'unique tasks');
+        }
+    } catch (error) {
+        console.error('Failed to load task history:', error);
+
+        // Try to load from localStorage
+        const stored = localStorage.getItem(`taskHistory_${idBadge}`);
+        if (stored) {
+            taskHistory = JSON.parse(stored);
+        }
+    }
+}
+
+function cleanTaskText(task) {
+    if (!task || typeof task !== 'string') return '';
+
+    let cleaned = task.trim();
+
+    // REMOVE ALL TIMESTAMP PATTERNS
+
+    // Pattern 1: [HH:MM:SS] at start
+    cleaned = cleaned.replace(/^\[?\d{1,2}:\d{2}:\d{2}\]?\s*/g, '');
+
+    // Pattern 2: (HH:MM:SS) at start
+    cleaned = cleaned.replace(/^\(\d{1,2}:\d{2}:\d{2}\)\s*/g, '');
+
+    // Pattern 3: [HH:MM:SS] anywhere in text
+    cleaned = cleaned.replace(/\[\d{1,2}:\d{2}:\d{2}\]/g, '');
+
+    // Pattern 4: (HH:MM:SS) anywhere in text
+    cleaned = cleaned.replace(/\(\d{1,2}:\d{2}:\d{2}\)/g, '');
+
+    // Pattern 5: HH:MM:SS at start (without brackets)
+    cleaned = cleaned.replace(/^\d{1,2}:\d{2}:\d{2}\s*/g, '');
+
+    // Pattern 6: Timestamp at end
+    cleaned = cleaned.replace(/\s*\d{1,2}:\d{2}:\d{2}\s*$/g, '');
+
+    // Pattern 7: Time with AM/PM (e.g., "07:07 AM", "10:30 PM")
+    cleaned = cleaned.replace(/\d{1,2}:\d{2}\s*[AP]M/gi, '');
+
+    // SKIP SYSTEM MESSAGES ENTIRELY
+
+    const systemKeywords = [
+        'AUTO TIME-OUT',
+        'AUTO TIME OUT',
+        'AUTO TIMED OUT',
+        'ADMIN CORRECTION',
+        'ADMIN CORRECTED',
+        'ADMIN MANUAL ENTRY',
+        '[ADMIN',
+        'ADMIN:',
+        '=== Tasks Completed',
+        '=== Additional Tasks',
+        '=== Tasks Added',
+        'Student did not time out',
+        'Added during time-out',
+        'Completed:',
+        'Added at:',
+        'Logged at:'
+    ];
+
+    for (const keyword of systemKeywords) {
+        if (cleaned.toUpperCase().includes(keyword.toUpperCase())) {
+            return ''; // Skip this line entirely
+        }
+    }
+
+    // ===================================
+    // REMOVE FORMATTING MARKERS
+    // ===================================
+
+    // Remove bullet points, numbering, dashes at start
+    cleaned = cleaned.replace(/^[•\-\*\d+.)\]\s]+/, '').trim();
+
+    // Remove "Completed: HH:MM AM/PM" patterns
+    cleaned = cleaned.replace(/\s*Completed:\s*\d{1,2}:\d{2}\s*[AP]M\s*/gi, '');
+
+    // Remove extra whitespace
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+
+    // ===================================
+    // FINAL VALIDATION
+    // ===================================
+
+    // Must be at least 5 characters
+    if (cleaned.length < 5) return '';
+
+    // Must not be just a timestamp
+    if (/^\d{1,2}:\d{2}/.test(cleaned)) return '';
+
+    return cleaned;
+}
+
+// Initialize autocomplete when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // ... existing initialization code ...
+
+    // Setup autocomplete after a short delay to ensure DOM is ready
+    setTimeout(() => {
+        setupTaskAutocomplete();
+    }, 500);
+});
+
+
+// Global variables for schedule tracking
+let studentScheduleData = null;
+let earlyArrivalData = null;
+
+// Check for early arrival
+async function checkEarlyArrival(studentData) {
+    const idBadge = elements.idBadge().value.trim();
+
+    if (!idBadge || !isValidIdBadge(idBadge)) {
+        hideScheduleInfo();
+        earlyArrivalData = null;
+        return;
+    }
+
+    if (!studentData || studentData.currentStatus !== 'TIMED_IN') {
+        hideScheduleInfo();
+        earlyArrivalData = null;
+        return;
+    }
+
+    try {
+        // Get student schedule
+        const studentsResponse = await fetch(`${API_BASE_URL}/students/all`);
+        if (!studentsResponse.ok) {
+            hideScheduleInfo();
+            earlyArrivalData = null;
+            return;
+        }
+
+        const allStudents = await studentsResponse.json();
+        const currentStudent = allStudents.find(s => s.idBadge === idBadge);
+
+        if (!currentStudent || !currentStudent.scheduleActive) {
+            hideScheduleInfo();
+            earlyArrivalData = null;
+            return;
+        }
+
+        // Get current session
+        const sessionResponse = await fetch(`${API_BASE_URL}/attendance/session/${idBadge}`);
+        if (!sessionResponse.ok) {
+            hideScheduleInfo();
+            earlyArrivalData = null;
+            return;
+        }
+
+        const sessionData = await sessionResponse.json();
+
+        // Store the CORRECT recordId from session
+        const currentRecordId = sessionData.recordId;
+
+        const timeIn = new Date(sessionData.timeIn);
+        const timeInTime = timeIn.toTimeString().split(' ')[0];
+
+        const scheduledStart = currentStudent.scheduledStartTime;
+        const scheduledEnd = currentStudent.scheduledEndTime;
+        const gracePeriod = currentStudent.gracePeriodMinutes || 5;
+
+        const [schedHours, schedMinutes] = scheduledStart.split(':').map(Number);
+        const [actualHours, actualMinutes] = timeInTime.split(':').map(Number);
+
+        const scheduledStartMinutes = (schedHours * 60) + schedMinutes - gracePeriod;
+        const actualTimeMinutes = (actualHours * 60) + actualMinutes;
+
+        // Check if arrived early
+        if (actualTimeMinutes < scheduledStartMinutes) {
+            const earlyByMinutes = scheduledStartMinutes - actualTimeMinutes;
+
+            if (earlyByMinutes > 45) {
+                // Store early arrival data with student ID for validation
+                earlyArrivalData = {
+                    scheduledTime: scheduledStart,
+                    scheduledEnd: scheduledEnd,
+                    actualTime: timeInTime,
+                    earlyMinutes: earlyByMinutes,
+                    recordId: currentRecordId,
+                    studentName: currentStudent.fullName,
+                    studentId: idBadge // CRITICAL: Store student ID for validation
+                };
+
+                // Check existing request with correct recordId
+                await checkAndShowOverrideButton(idBadge, currentRecordId);
+            } else {
+                hideScheduleInfo();
+                earlyArrivalData = null;
+            }
+        } else {
+            hideScheduleInfo();
+            earlyArrivalData = null;
+        }
+
+    } catch (error) {
+        console.error('Error checking early arrival:', error);
+        hideScheduleInfo();
+        earlyArrivalData = null;
+    }
+}
+
+async function checkAndShowOverrideButton(idBadge, recordId) {
+    // Validate we still have early arrival data
+    if (!earlyArrivalData || earlyArrivalData.recordId !== recordId) {
+        hideScheduleInfo();
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/schedule-override/my-requests/${idBadge}`);
+
+        if (response.ok) {
+            const data = await response.json();
+
+            if (data.success && data.requests && data.requests.length > 0) {
+                // Find request for CURRENT record ONLY (must match recordId exactly)
+                const currentRequest = data.requests.find(req =>
+                    req.attendanceRecordId === recordId
+                );
+
+                if (currentRequest) {
+                    // Has a request - show status button
+                    showOverrideStatusButton(currentRequest);
+                    return;
+                }
+            }
+        }
+
+        // No matching request found - show the REQUEST button (not status)
+        showScheduleInfo(earlyArrivalData);
+
+    } catch (error) {
+        console.error('Error checking override request:', error);
+        showScheduleInfo(earlyArrivalData);
+    }
+}
+
+function showOverrideStatusButton(request) {
+    const indicator = document.getElementById('earlyArrivalIndicator');
+
+    if (!indicator) return;
+
+    // Validate that this request belongs to current student's session
+    const currentIdBadge = elements.idBadge().value.trim();
+    if (!earlyArrivalData ||
+        earlyArrivalData.recordId !== request.attendanceRecordId ||
+        !currentIdBadge) {
+        console.log('Request does not match current session, hiding');
+        hideScheduleInfo();
+        return;
+    }
+
+    // Clear existing content
+    indicator.classList.remove('d-none');
+
+    // Build button based on status
+    let buttonHtml = '';
+
+    if (request.status === 'PENDING') {
+        // ⏳ PENDING - Yellow/Orange with pulse animation
+        buttonHtml = `
+            <button class="status-btn status-pending" onclick="viewRequestDetails(${request.id})" title="Request Pending - Click for details">
+                <div class="status-icon pulse">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" class="icon">
+                        <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <span class="status-text">
+                    <strong>Request Pending</strong>
+                    <small>Waiting for admin review</small>
+                </span>
+            </button>
+        `;
+    } else if (request.status === 'APPROVED') {
+        // ✅ APPROVED - Green with success animation
+        buttonHtml = `
+            <button class="status-btn status-approved" onclick="viewRequestDetails(${request.id})" title="Request Approved! Click for details">
+                <div class="status-icon bounce">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" class="icon">
+                        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <span class="status-text">
+                    <strong>✅ Request Approved!</strong>
+                    <small>Early hours counted - Click for details</small>
+                </span>
+            </button>
+        `;
+    } else if (request.status === 'REJECTED') {
+        // ❌ REJECTED - Red with shake animation
+        buttonHtml = `
+            <button class="status-btn status-rejected" onclick="viewRequestDetails(${request.id})" title="Request Rejected - Click to view reason">
+                <div class="status-icon shake">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" class="icon">
+                        <path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <span class="status-text">
+                    <strong>❌ Request Rejected</strong>
+                    <small>Click to view admin's reason</small>
+                </span>
+            </button>
+        `;
+    }
+
+    indicator.innerHTML = `<div class="override-status-container">${buttonHtml}</div>`;
+}
+
+function viewRequestDetails(requestId) {
+    const idBadge = elements.idBadge().value.trim();
+
+    showLoading();
+
+    fetch(`${API_BASE_URL}/schedule-override/request/${requestId}`)
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+
+            if (data.success && data.request) {
+                displaySingleRequestModal(data.request);
+            } else {
+                showAlert('Failed to load request details', 'error');
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            showAlert('Network error: ' + error.message, 'error');
+        });
+}
+
+function displaySingleRequestModal(req) {
+    const statusColor = req.status === 'APPROVED' ? '#10b981' :
+                      req.status === 'REJECTED' ? '#ef4444' : '#f59e0b';
+
+    const statusIcon = req.status === 'APPROVED' ? '✅' :
+                      req.status === 'REJECTED' ? '❌' : '⏳';
+
+    Swal.fire({
+        title: `${statusIcon} Request #${req.id}`,
+        html: `
+            <div style="text-align: left; padding: 1rem;">
+
+                <!-- Status Banner -->
+                <div style="background: ${statusColor}; color: white; padding: 1rem; border-radius: 12px; margin-bottom: 1.5rem; text-align: center;">
+                    <h3 style="margin: 0; font-size: 1.3rem;">${req.status}</h3>
+                    <p style="margin: 0.5rem 0 0 0; font-size: 0.9rem; opacity: 0.9;">
+                        ${req.status === 'PENDING' ? 'Waiting for admin review' :
+                          req.status === 'APPROVED' ? 'Your early hours have been counted!' :
+                          'Normal schedule rules apply'}
+                    </p>
+                </div>
+
+                <!-- Details Card -->
+                <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 12px; margin-bottom: 1rem;">
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Scheduled</div>
+                            <div style="font-size: 1.1rem; font-weight: 600;">${formatTimeShort(req.scheduledTime)}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Your Time In</div>
+                            <div style="font-size: 1.1rem; font-weight: 600; color: #dc2626;">${formatTimeShort(req.actualTime)}</div>
+                        </div>
+                    </div>
+                    <div style="background: white; padding: 0.75rem; border-radius: 8px; text-align: center;">
+                        <strong style="color: #dc2626;">Early by ${req.earlyMinutes} minutes</strong>
+                    </div>
+                </div>
+
+                <!-- Your Reason -->
+                <div style="background: white; padding: 1rem; border-radius: 12px; margin-bottom: 1rem; border: 1px solid var(--border-color);">
+                    <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">Your Reason:</div>
+                    <div style="font-size: 0.9rem; line-height: 1.6; color: var(--text-primary);">${req.reason}</div>
+                </div>
+
+                ${req.status === 'APPROVED' && req.adminResponse ? `
+                    <!-- Admin Approval Message -->
+                    <div style="background: #d1fae5; padding: 1rem; border-radius: 12px; border-left: 4px solid #10b981;">
+                        <div style="font-weight: 700; color: #065f46; margin-bottom: 0.5rem;">
+                            💬 Admin's Message:
+                        </div>
+                        <div style="font-size: 0.9rem; color: #047857; line-height: 1.6;">
+                            "${req.adminResponse}"
+                        </div>
+                        <div style="font-size: 0.8rem; color: #059669; margin-top: 0.75rem;">
+                            — ${req.reviewedBy} • ${formatDateTime(req.reviewedAt)}
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${req.status === 'REJECTED' && req.adminResponse ? `
+                    <!-- Admin Rejection Message -->
+                    <div style="background: #fee2e2; padding: 1rem; border-radius: 12px; border-left: 4px solid #ef4444;">
+                        <div style="font-weight: 700; color: #991b1b; margin-bottom: 0.5rem;">
+                            💬 Admin's Reason:
+                        </div>
+                        <div style="font-size: 0.9rem; color: #7f1d1d; line-height: 1.6;">
+                            "${req.adminResponse}"
+                        </div>
+                        <div style="font-size: 0.8rem; color: #991b1b; margin-top: 0.75rem;">
+                            — ${req.reviewedBy} • ${formatDateTime(req.reviewedAt)}
+                        </div>
+                    </div>
+                ` : ''}
+
+                ${req.status === 'PENDING' ? `
+                    <!-- Pending Info -->
+                    <div style="background: #fef3c7; padding: 1rem; border-radius: 12px; border-left: 4px solid #f59e0b;">
+                        <div style="font-weight: 600; color: #92400e; margin-bottom: 0.5rem;">
+                            ⏳ Pending Review
+                        </div>
+                        <div style="font-size: 0.85rem; color: #78350f; line-height: 1.6;">
+                            Your request was submitted on ${formatDateTime(req.requestedAt)}. Admin will review it soon.
+                        </div>
+                    </div>
+                ` : ''}
+
+            </div>
+        `,
+        width: '600px',
+        confirmButtonText: 'Close',
+        confirmButtonColor: statusColor
+    });
+}
+
+function addOverrideRequestsButton() {
+    const modalActions = document.querySelector('#dashboardModal .modal-actions');
+
+    if (!document.getElementById('viewOverrideRequestsBtn')) {
+        const requestsBtn = document.createElement('button');
+        requestsBtn.id = 'viewOverrideRequestsBtn';
+        requestsBtn.className = 'btn btn-info';
+        requestsBtn.innerHTML = '📋 Override Requests';
+        requestsBtn.onclick = () => viewMyOverrideRequests();
+
+        // Insert before close button
+        const closeBtn = modalActions.querySelector('button:last-child');
+        modalActions.insertBefore(requestsBtn, closeBtn);
+    }
+}
+
+// Show schedule information box
+function showScheduleInfo(data) {
+    const indicator = document.getElementById('earlyArrivalIndicator');
+
+    if (!indicator || !data) return;
+
+    // Show the request button (for students who haven't requested yet)
+    indicator.innerHTML = `
+        <button class="info-icon-btn" onclick="showEarlyArrivalModal()" title="Important: Early Arrival Policy">
+            <svg class="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <circle cx="12" cy="12" r="10" stroke-width="2"/>
+                <line x1="12" y1="16" x2="12" y2="12" stroke-width="2" stroke-linecap="round"/>
+                <line x1="12" y1="8" x2="12.01" y2="8" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <span class="indicator-text">You arrived early - Click for info</span>
+        </button>
+    `;
+
+    indicator.classList.remove('d-none');
+}
+
+/**
+ * Hide schedule information box
+ */
+function hideScheduleInfo() {
+    const indicator = document.getElementById('earlyArrivalIndicator');
+
+    if (indicator) {
+        indicator.classList.add('d-none');
+        indicator.innerHTML = '';
+    }
+
+    earlyArrivalData = null;
+}
+
+function showEarlyArrivalModal() {
+    // VALIDATION: Check if we have early arrival data
+    if (!earlyArrivalData) {
+        console.warn('No early arrival data available');
+        hideScheduleInfo();
+        return;
+    }
+
+    // VALIDATION: Check if student is still timed in
+    const idBadge = elements.idBadge().value.trim();
+    if (!idBadge || !isValidIdBadge(idBadge)) {
+        console.warn('Invalid ID badge');
+        hideScheduleInfo();
+        return;
+    }
+
+    const modal = document.getElementById('earlyArrivalModal');
+
+    // Update modal content
+    document.getElementById('modalScheduledTime').textContent =
+        `${formatTimeOnly(parseTimeString(earlyArrivalData.scheduledTime))} - ${formatTimeOnly(parseTimeString(earlyArrivalData.scheduledEnd))}`;
+
+    document.getElementById('modalActualTime').textContent =
+        formatTimeOnly(parseTimeString(earlyArrivalData.actualTime));
+
+    const hours = Math.floor(earlyArrivalData.earlyMinutes / 60);
+    const minutes = earlyArrivalData.earlyMinutes % 60;
+    const timeText = hours > 0 ? `${hours} hour${hours !== 1 ? 's' : ''} ${minutes} min` : `${minutes} minutes`;
+    document.getElementById('modalEarlyMinutes').textContent = timeText;
+
+    // Show/hide emergency card based on early time (45+ minutes)
+    const emergencyCard = document.getElementById('emergencyOverrideCard');
+    if (emergencyCard) {
+        if (earlyArrivalData.earlyMinutes >= 45) {
+            emergencyCard.style.display = 'block';
+        } else {
+            emergencyCard.style.display = 'none';
+        }
+    }
+
+    modal.classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeEarlyArrivalModal() {
+    const modal = document.getElementById('earlyArrivalModal');
+    modal.classList.remove('show');
+    document.body.style.overflow = '';
+}
+
+function openOverrideRequest() {
+    closeEarlyArrivalModal();
+    requestScheduleOverride();
+}
+
+/**
+ * Request schedule override
+ */
+function requestScheduleOverride() {
+    if (!earlyArrivalData) {
+        showAlert('No early arrival detected', 'error');
+        return;
+    }
+
+    const modal = document.getElementById('scheduleOverrideModal');
+    modal.classList.add('show');
+    document.body.style.overflow = 'hidden';
+    document.getElementById('overrideReason').focus();
+}
+
+/**
+ * Close schedule override modal
+ */
+function closeScheduleOverrideModal() {
+    const modal = document.getElementById('scheduleOverrideModal');
+    modal.classList.remove('show');
+    document.body.style.overflow = '';
+    document.getElementById('scheduleOverrideForm').reset();
+}
+
+/**
+ * Submit schedule override request
+ */
+async function submitScheduleOverride(event) {
+    event.preventDefault();
+
+    const idBadge = elements.idBadge().value.trim();
+    const reason = document.getElementById('overrideReason').value.trim();
+
+    if (reason.length < 20) {
+        showAlert('Please provide a detailed reason (minimum 20 characters)', 'warning');
+        return;
+    }
+
+    if (!earlyArrivalData) {
+        showAlert('No early arrival data found', 'error');
+        return;
+    }
+
+    showLoading();
+    closeScheduleOverrideModal();
+
+    try {
+        const requestData = {
+            idBadge: idBadge,
+            recordId: earlyArrivalData.recordId,
+            scheduledTime: earlyArrivalData.scheduledTime.substring(0, 5),
+            actualTime: earlyArrivalData.actualTime.substring(0, 5),
+            earlyMinutes: earlyArrivalData.earlyMinutes,
+            reason: reason
+        };
+
+        console.log('Submitting override request:', requestData);
+
+        const response = await fetch(`${API_BASE_URL}/schedule-override/request`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestData)
+        });
+
+        const data = await response.json();
+
+        hideLoading();
+
+        if (response.ok && data.success) {
+            await Swal.fire({
+                icon: 'success',
+                title: 'Request Submitted!',
+                html: `
+                    <div style="text-align: left; padding: 1rem;">
+                        <p style="margin-bottom: 1rem;"><strong>Your schedule override request has been sent to admin.</strong></p>
+                        <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                            <p style="margin: 0.5rem 0;"><strong>Request ID:</strong> #${data.request.id}</p>
+                            <p style="margin: 0.5rem 0;"><strong>Early by:</strong> ${earlyArrivalData.earlyMinutes} minutes</p>
+                            <p style="margin: 0.5rem 0;"><strong>Status:</strong> <span style="color: #f59e0b; font-weight: 600;">⏳ PENDING</span></p>
+                        </div>
+                        <p style="font-size: 0.9rem; color: var(--text-muted);">
+                            You'll be notified when admin reviews your request. Check your requests status in the dashboard.
+                        </p>
+                    </div>
+                `,
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#10b981'
+            });
+
+            const indicator = document.getElementById('earlyArrivalIndicator');
+            if (indicator) {
+                indicator.classList.add('d-none');
+            }
+
+            earlyArrivalData = null;
+
+        } else {
+            showAlert(data.message || 'Failed to submit request', 'error');
+        }
+
+    } catch (error) {
+        hideLoading();
+        console.error('Schedule override error:', error);
+        showAlert('Network error: ' + error.message, 'error');
+    }
+}
+
+async function checkPendingOverrideRequests(idBadge) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/schedule-override/my-pending-requests/${idBadge}`);
+
+        if (response.ok) {
+            const data = await response.json();
+
+            if (data.success && data.pendingRequests && data.pendingRequests.length > 0) {
+                showPendingRequestNotification(data.pendingRequests);
+            }
+        }
+    } catch (error) {
+        console.error('Failed to check pending requests:', error);
+    }
+}
+
+function showPendingRequestNotification(requests) {
+    const count = requests.length;
+
+    Swal.fire({
+        toast: true,
+        position: 'top-end',
+        icon: 'info',
+        title: `You have ${count} pending request${count !== 1 ? 's' : ''}`,
+        text: 'Check your dashboard to view details',
+        showConfirmButton: false,
+        timer: 5000,
+        timerProgressBar: true
+    });
+}
+
+function showPendingRequestsNotification(requests) {
+    const count = requests.length;
+    const latest = requests[0]; // Most recent request
+
+    Swal.fire({
+        icon: 'info',
+        title: `You have ${count} pending request${count !== 1 ? 's' : ''}`,
+        html: `
+            <div style="text-align: left; padding: 1rem;">
+                <p style="margin-bottom: 1rem;">Your schedule override request is being reviewed:</p>
+                <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                    <p style="margin: 0.5rem 0;"><strong>Request #${latest.id}</strong></p>
+                    <p style="margin: 0.5rem 0;"><strong>Early by:</strong> ${latest.earlyMinutes} minutes</p>
+                    <p style="margin: 0.5rem 0;"><strong>Status:</strong> <span style="color: #f59e0b; font-weight: 600;">PENDING</span></p>
+                    <p style="margin: 0.5rem 0; font-size: 0.85rem; color: var(--text-muted);">Submitted: ${formatDateTime(latest.requestedAt)}</p>
+                </div>
+                <p style="margin-top: 1rem; font-size: 0.9rem; color: var(--text-muted);">Admin will review shortly.</p>
+            </div>
+        `,
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#3b82f6'
+    });
+}
+
+async function viewMyOverrideRequests() {
+    const idBadge = elements.idBadge().value.trim();
+
+    if (!validateIdBadge(idBadge)) {
+        showAlert('Please enter your ID badge first', 'warning');
+        return;
+    }
+
+    showLoading();
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/schedule-override/my-requests/${idBadge}`);
+
+        if (!response.ok) {
+            throw new Error('Failed to load requests');
+        }
+
+        const data = await response.json();
+
+        hideLoading();
+
+        if (data.success && data.requests && data.requests.length > 0) {
+            displayMyOverrideRequests(data.requests);
+        } else {
+            Swal.fire({
+                icon: 'info',
+                title: 'No Requests Found',
+                text: 'You have not submitted any schedule override requests yet.',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#3b82f6'
+            });
+        }
+
+    } catch (error) {
+        hideLoading();
+        showAlert('Failed to load requests: ' + error.message, 'error');
+    }
+}
+
+function displayMyOverrideRequests(requests) {
+    requests.sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
+
+    const requestsHtml = requests.map(req => {
+        const statusColor = req.status === 'APPROVED' ? '#10b981' :
+                          req.status === 'REJECTED' ? '#ef4444' : '#f59e0b';
+
+        const statusIcon = req.status === 'APPROVED' ? '✓' :
+                          req.status === 'REJECTED' ? '✗' : '⏳';
+
+        return `
+            <div style="background: var(--bg-secondary); padding: 1.25rem; border-radius: 12px; margin-bottom: 1rem; border-left: 4px solid ${statusColor};">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+                    <div>
+                        <strong style="font-size: 1.1rem;">Request #${req.id}</strong>
+                        <p style="margin: 0.25rem 0 0 0; font-size: 0.85rem; color: var(--text-muted);">
+                            Submitted: ${formatDateTime(req.requestedAt)}
+                        </p>
+                    </div>
+                    <span style="background: ${statusColor}; color: white; padding: 0.35rem 0.85rem; border-radius: 12px; font-size: 0.8rem; font-weight: 700;">
+                        ${statusIcon} ${req.status}
+                    </span>
+                </div>
+
+                <div style="background: white; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem;">
+                        <div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Scheduled Time</div>
+                            <div style="font-size: 1rem; font-weight: 600;">${formatTimeShort(req.scheduledTime)}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Your Time In</div>
+                            <div style="font-size: 1rem; font-weight: 600; color: #dc2626;">${formatTimeShort(req.actualTime)}</div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color);">
+                        <strong>Early by: ${req.earlyMinutes} minutes</strong>
+                    </div>
+                </div>
+
+                <details style="margin-bottom: 1rem;">
+                    <summary style="cursor: pointer; font-size: 0.9rem; font-weight: 600; color: var(--text-secondary); padding: 0.5rem; background: white; border-radius: 6px;">
+                        📝 View Your Reason
+                    </summary>
+                    <div style="padding: 0.75rem; background: white; border-radius: 6px; margin-top: 0.5rem; font-size: 0.85rem; line-height: 1.6;">
+                        ${req.reason}
+                    </div>
+                </details>
+
+                ${req.status === 'PENDING' ? `
+                    <div style="background: #fef3c7; padding: 1rem; border-radius: 8px; font-size: 0.85rem; color: #92400e;">
+                        ⏳ <strong>Waiting for admin review...</strong>
+                    </div>
+                ` : ''}
+
+                ${req.status === 'APPROVED' ? `
+                    <div style="background: #d1fae5; padding: 1rem; border-radius: 8px;">
+                        <div style="font-weight: 700; color: #065f46; margin-bottom: 0.5rem;">
+                            ✅ Request Approved!
+                        </div>
+                        <div style="font-size: 0.85rem; color: #065f46;">
+                            Your early hours have been counted for this session.
+                        </div>
+                        ${req.reviewedBy ? `
+                            <div style="font-size: 0.8rem; color: #047857; margin-top: 0.5rem;">
+                                Reviewed by ${req.reviewedBy} on ${formatDateTime(req.reviewedAt)}
+                            </div>
+                        ` : ''}
+                        ${req.adminResponse ? `
+                            <div style="background: white; padding: 0.75rem; border-radius: 6px; margin-top: 0.75rem; font-size: 0.85rem; color: #065f46;">
+                                <strong>Admin said:</strong><br>
+                                "${req.adminResponse}"
+                            </div>
+                        ` : ''}
+                    </div>
+                ` : ''}
+
+                ${req.status === 'REJECTED' ? `
+                    <div style="background: #fee2e2; padding: 1rem; border-radius: 8px;">
+                        <div style="font-weight: 700; color: #991b1b; margin-bottom: 0.5rem;">
+                            ❌ Request Rejected
+                        </div>
+                        <div style="font-size: 0.85rem; color: #991b1b;">
+                            Normal schedule rules apply - early hours were not counted.
+                        </div>
+                        ${req.reviewedBy ? `
+                            <div style="font-size: 0.8rem; color: #7f1d1d; margin-top: 0.5rem;">
+                                Reviewed by ${req.reviewedBy} on ${formatDateTime(req.reviewedAt)}
+                            </div>
+                        ` : ''}
+                        ${req.adminResponse ? `
+                            <div style="background: white; padding: 0.75rem; border-radius: 6px; margin-top: 0.75rem; font-size: 0.85rem; color: #991b1b;">
+                                <strong>Admin's reason:</strong><br>
+                                "${req.adminResponse}"
+                            </div>
+                        ` : ''}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+
+    Swal.fire({
+        title: '📋 My Override Requests',
+        html: `
+            <div style="text-align: left; max-height: 500px; overflow-y: auto; padding: 0.5rem;">
+                ${requestsHtml}
+            </div>
+        `,
+        width: '650px',
+        confirmButtonText: 'Close',
+        confirmButtonColor: '#3b82f6'
+    });
+}
+
+function formatDateTime(dateTimeStr) {
+    if (!dateTimeStr) return 'N/A';
+    try {
+        const date = new Date(dateTimeStr);
+        return date.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+    } catch {
+        return dateTimeStr;
+    }
+}
+
+function formatTimeShort(timeStr) {
+    if (!timeStr) return 'N/A';
+    try {
+        const [hours, minutes] = timeStr.split(':');
+        const hour = parseInt(hours);
+        const ampm = hour >= 12 ? 'PM' : 'AM';
+        const displayHour = hour % 12 || 12;
+        return `${displayHour}:${minutes} ${ampm}`;
+    } catch {
+        return timeStr;
+    }
+}
+
+/**
+ * Helper function to parse time string
+ */
+function parseTimeString(timeStr) {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    const date = new Date();
+    date.setHours(hours, minutes, 0, 0);
+    return date;
+}
+
+/**
+ * Helper function to format time
+ */
+function formatTimeOnly(date) {
+    return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+    });
 }
 
 console.log('OJT Attendance System with TOTP Loaded');
