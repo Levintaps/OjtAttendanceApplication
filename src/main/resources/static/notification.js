@@ -3,6 +3,7 @@ class ToastNotification {
     constructor() {
         this.container = this.createContainer();
         this.toasts = [];
+        this.recentMessages = new Map(); // Track recent messages to prevent duplicates
     }
 
     createContainer() {
@@ -17,7 +18,7 @@ class ToastNotification {
 
     getIcon(type) {
         const icons = {
-            success: '✓',
+            success: '✔',
             error: '✕',
             warning: '⚠',
             info: 'ℹ'
@@ -35,7 +36,38 @@ class ToastNotification {
         return titles[type] || titles.info;
     }
 
+    isDuplicate(message, type) {
+        const key = `${type}:${message}`;
+        const now = Date.now();
+
+        // Check if this exact message was shown in the last 2 seconds
+        if (this.recentMessages.has(key)) {
+            const lastShown = this.recentMessages.get(key);
+            if (now - lastShown < 2000) {
+                return true; // It's a duplicate
+            }
+        }
+
+        // Update the timestamp for this message
+        this.recentMessages.set(key, now);
+
+        // Clean up old entries (older than 5 seconds)
+        for (const [msgKey, timestamp] of this.recentMessages.entries()) {
+            if (now - timestamp > 5000) {
+                this.recentMessages.delete(msgKey);
+            }
+        }
+
+        return false;
+    }
+
     show(message, type = 'info', duration = 6000) {
+        // Prevent duplicate toasts
+        if (this.isDuplicate(message, type)) {
+            console.log('Duplicate toast prevented:', message);
+            return null;
+        }
+
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
 
@@ -59,6 +91,9 @@ class ToastNotification {
         // Add to container
         this.container.appendChild(toast);
         this.toasts.push(toast);
+
+        // Trigger reflow for animation
+        toast.offsetHeight;
 
         // Auto remove after duration
         const timeout = setTimeout(() => {
@@ -124,10 +159,11 @@ const toastSystem = new ToastNotification();
 
 // Replace the old showAlert function
 function showAlert(message, type = 'info') {
-    // Hide validation warning if showing
-    hideValidationWarning();
+    if (typeof hideValidationWarning === 'function') {
+        hideValidationWarning();
+    }
 
-    // Show toast notification
+    // Show toast notification (with duplicate prevention)
     toastSystem.show(message, type);
 }
 
@@ -136,7 +172,17 @@ function hideAlerts() {
     toastSystem.clear();
 }
 
+// Add helper function to hide any validation warnings
+function hideValidationWarning() {
+    const warnings = document.querySelectorAll('.alert-warning, .validation-message');
+    warnings.forEach(warning => {
+        if (warning.style) {
+            warning.style.display = 'none';
+        }
+    });
+}
+
 // Export for use in other files
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ToastNotification, showAlert, hideAlerts };
+    module.exports = { ToastNotification, showAlert, hideAlerts, hideValidationWarning };
 }

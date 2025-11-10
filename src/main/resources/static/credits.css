@@ -118,6 +118,14 @@
     letter-spacing: 1px;
 }
 
+.credit-title {
+    font-size: 0.6rem;
+    color: #b6e7a4;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
 .credit-name {
     font-size: 1.3rem;
     color: #fff;
