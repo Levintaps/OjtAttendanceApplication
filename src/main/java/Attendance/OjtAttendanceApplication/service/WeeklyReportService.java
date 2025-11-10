@@ -234,7 +234,7 @@ public class WeeklyReportService {
 
             // Set document properties
             pdf.setDefaultPageSize(PageSize.LETTER);
-            document.setMargins(36, 36, 36, 36);
+            document.setMargins(30, 30, 30, 30);
 
             // Add logo
             addLogo(document);
@@ -279,7 +279,7 @@ public class WeeklyReportService {
             addTableHeader(table, "No. of\nHours");
             addTableHeader(table, "Task/Learning");
 
-            // FIXED: Add records (ONLY days with attendance - no absent days shown)
+            // Add records (ONLY days with attendance - no absent days shown)
             if (recordsByDate.isEmpty()) {
                 // If no attendance at all during this week
                 Cell noDataCell = new Cell(1, 5)
@@ -307,32 +307,29 @@ public class WeeklyReportService {
             Paragraph weeklyTotalPara = new Paragraph("Weekly Total: " + String.format("%.0f hours", weeklyTotal))
                     .setFontSize(11)
                     .setBold()
-                    .setTextAlignment(TextAlignment.RIGHT)
-                    .setMarginTop(10);
+                    .setTextAlignment(TextAlignment.RIGHT);
             document.add(weeklyTotalPara);
 
             // Total Hours Completed: CUMULATIVE from Week 1 to THIS WEEK
             Paragraph totalCompletedPara = new Paragraph("Total Hours Completed: " + String.format("%.0f hours", totalCompleted))
                     .setFontSize(11)
-                    .setTextAlignment(TextAlignment.RIGHT)
-                    .setMarginTop(3);
+                    .setTextAlignment(TextAlignment.RIGHT);
             document.add(totalCompletedPara);
 
             // Hours Remaining: Required Hours - Cumulative Total
             Paragraph hoursRemainingPara = new Paragraph("Hours Remaining: " + String.format("%.0f hours", hoursRemaining))
                     .setFontSize(11)
-                    .setTextAlignment(TextAlignment.RIGHT)
-                    .setMarginTop(3);
+                    .setTextAlignment(TextAlignment.RIGHT);
             document.add(hoursRemainingPara);
 
             // Signature section
-            document.add(new Paragraph("\n\n"));
+            document.add(new Paragraph("\n"));
             document.add(new Paragraph("Reviewed by:")
                     .setFontSize(11)
-                    .setMarginTop(30));
+                    .setMarginTop(10));
 
             document.add(new Paragraph("__________________________")
-                    .setMarginTop(20));
+                    .setMarginTop(10));
 
             document.add(new Paragraph("Mike Cercado")
                     .setBold()
@@ -392,7 +389,7 @@ public class WeeklyReportService {
                 .setFontSize(40)
                 .setBold()
                 .setFontColor(new DeviceRgb(0, 51, 153))
-                .setMarginBottom(5));
+                .setMarginBottom(-10));
     }
 
     private void addTableHeader(Table table, String header) {
