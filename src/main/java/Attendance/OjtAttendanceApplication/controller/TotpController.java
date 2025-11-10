@@ -1,6 +1,9 @@
 package Attendance.OjtAttendanceApplication.controller;
 
+import Attendance.OjtAttendanceApplication.entity.AdminNotification;
+import Attendance.OjtAttendanceApplication.entity.NotificationType;
 import Attendance.OjtAttendanceApplication.entity.Student;
+import Attendance.OjtAttendanceApplication.repository.AdminNotificationRepository;
 import Attendance.OjtAttendanceApplication.repository.StudentRepository;
 import Attendance.OjtAttendanceApplication.service.TotpService;
 import org.springframework.beans.factory.annotation.Autowired;

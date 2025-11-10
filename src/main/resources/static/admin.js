@@ -199,7 +199,8 @@ async function loadInitialData() {
         await Promise.all([
             loadDashboard(),
             loadAllStudents(),
-            loadNotifications()
+            loadNotifications(),
+            loadOverrideCount()
         ]);
     } catch (error) {
         console.error('Failed to load initial data:', error);
@@ -270,6 +271,7 @@ async function loadTabData(tabName) {
         case 'schedules':
             await loadScheduleOverview();
             await loadLateArrivals();
+            await loadScheduleOverrideRequests();
             break;
         case 'liveTasks':
             await loadLiveTaskUpdates();
@@ -631,6 +633,12 @@ async function displayStudentsTableNew(students) {
                                         </svg>
                                         Change Badge
                                     </button>
+                                    <button class="menu-item warning" onclick="showResetTotpModal('${student.idBadge}', '${student.fullName}'); closeAllMenus()">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+                                        </svg>
+                                        Reset TOTP
+                                    </button>
                                     <button class="menu-item" onclick="showHoursModal(${student.id}, '${student.fullName}', ${requiredHours || 0}); closeAllMenus()">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <circle cx="12" cy="12" r="10"></circle>
@@ -760,14 +768,19 @@ function updateSidebarStats(students) {
         return progress >= 90 && progress < 100;
     }).length;
 
+    // Calculate absent students count
+    const absentToday = getAbsentStudentsToday().length;
+
     document.getElementById('sidebarTotalStudents').textContent = totalStudents;
     document.getElementById('sidebarActiveStudents').textContent = activeStudents;
     document.getElementById('sidebarCompletedStudents').textContent = completedStudents;
+    document.getElementById('sidebarAbsentToday').textContent = absentToday;
 
     document.getElementById('chipAllCount').textContent = totalStudents;
     document.getElementById('chipActiveCount').textContent = activeStudents;
     document.getElementById('chipCompletedCount').textContent = completedStudents;
     document.getElementById('chipNearCount').textContent = nearCompletion;
+    document.getElementById('chipAbsentCount').textContent = absentToday;
 }
 
 function loadStudentsByStatusNew(statusFilter) {
@@ -793,9 +806,35 @@ function loadStudentsByStatusNew(statusFilter) {
                 return progress >= 90 && progress < 100;
             });
             break;
+        case 'absent-today':
+            filtered = getAbsentStudentsToday();
+            break;
     }
 
     displayStudentsTableNew(filtered);
+}
+
+function getAbsentStudentsToday() {
+    // Get all ACTIVE students
+    const activeStudents = studentsCache.filter(s => s.status === 'ACTIVE');
+
+    // Get all students who have activity today (from activeStudentsData)
+    const activeToday = new Set(activeStudentsData.map(s => s.idBadge));
+
+    // Also check today's records for students who timed out
+    const todayRecords = allAttendanceRecords || [];
+    todayRecords.forEach(record => {
+        if (record.idBadge) {
+            activeToday.add(record.idBadge);
+        }
+    });
+
+    // Filter out students who have activity today
+    const absentStudents = activeStudents.filter(student => {
+        return !activeToday.has(student.idBadge);
+    });
+
+    return absentStudents;
 }
 
 function filterStudentsNew() {
@@ -1279,7 +1318,10 @@ async function submitStatusChange(event) {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
-                }
+                },
+                body: JSON.stringify({
+                    confirmed: true
+                })
             });
         } else {
             console.log('📝 Attempting to change status to:', newStatus);
@@ -1431,6 +1473,234 @@ async function submitScheduleChange(event) {
     } finally {
         hideLoading();
     }
+}
+
+// ==================== TOTP MANAGEMENT ====================
+
+/**
+ * Show Reset TOTP Modal
+ */
+function showResetTotpModal(idBadge, studentName) {
+    // Store student info
+    const modal = document.getElementById('resetTotpModal');
+    modal.dataset.idBadge = idBadge;
+    modal.dataset.studentName = studentName;
+
+    // Display student info
+    document.getElementById('resetTotpStudentInfo').innerHTML = `
+        <h4>Student Information</h4>
+        <div class="detail-grid">
+            <div class="detail-item">
+                <div class="detail-label">Full Name</div>
+                <div class="detail-value"><strong>${studentName}</strong></div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-label">ID Badge</div>
+                <div class="detail-value"><span class="badge-number">${idBadge}</span></div>
+            </div>
+        </div>
+    `;
+
+    // Reset form
+    document.getElementById('resetTotpForm').reset();
+
+    showModal('resetTotpModal');
+}
+
+/**
+ * Submit TOTP Reset
+ */
+async function submitResetTotp(event) {
+    event.preventDefault();
+
+    const modal = document.getElementById('resetTotpModal');
+    const idBadge = modal.dataset.idBadge;
+    const studentName = modal.dataset.studentName;
+    const reason = document.getElementById('resetTotpReason').value.trim();
+    const confirmed = document.getElementById('confirmResetTotp').checked;
+
+    // Validation
+    if (!confirmed) {
+        showAlert('Please confirm that this is an emergency situation', 'error');
+        return;
+    }
+
+    if (reason.length < 10) {
+        showAlert('Please provide a detailed reason (minimum 10 characters)', 'error');
+        return;
+    }
+
+    // Close reset modal and show confirmation
+    closeModal('resetTotpModal');
+    showResetTotpConfirmation(idBadge, studentName, reason);
+}
+
+/**
+ * Show Reset TOTP Confirmation
+ */
+function showResetTotpConfirmation(idBadge, studentName, reason) {
+    const content = document.getElementById('resetTotpConfirmContent');
+
+    content.innerHTML = `
+        <div class="confirm-entry-card warning">
+            <div class="confirm-header">
+                <div class="confirm-icon warning">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </div>
+                <h3>⚠️ Confirm TOTP Reset</h3>
+                <p>This will disable Two-Factor Authentication for this student</p>
+            </div>
+
+            <div class="confirm-details">
+                <div class="detail-row">
+                    <span class="detail-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                        Student
+                    </span>
+                    <span class="detail-value">${studentName}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                        Badge ID
+                    </span>
+                    <span class="detail-value"><span class="badge-number">${idBadge}</span></span>
+                </div>
+                <div class="detail-row vertical">
+                    <span class="detail-label">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                        Reason
+                    </span>
+                    <span class="detail-value reason">${reason}</span>
+                </div>
+            </div>
+
+            <div class="confirm-warning">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <div class="confirm-warning-content">
+                    <strong>This action will:</strong>
+                    <ul>
+                        <li>Disable <strong>Two-Factor Authentication</strong></li>
+                        <li>Allow student to log in <strong>without TOTP code</strong></li>
+                        <li>Student must <strong>set up TOTP again</strong> with new device</li>
+                        <li>Action will be <strong>logged for audit</strong></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="modal-actions" style="margin-top: 1.5rem;">
+                <button class="btn btn-secondary" onclick="closeModal('resetTotpConfirmModal')">Cancel</button>
+                <button class="btn btn-warning" onclick="executeResetTotp('${idBadge}', '${studentName}', '${reason}')">
+                    Yes, Reset TOTP
+                </button>
+            </div>
+        </div>
+    `;
+
+    showModal('resetTotpConfirmModal');
+}
+
+/**
+ * Execute TOTP Reset
+ */
+async function executeResetTotp(idBadge, studentName, reason) {
+    closeModal('resetTotpConfirmModal');
+    showLoading();
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/totp/admin/reset/${idBadge}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: reason })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to reset TOTP');
+        }
+
+        const result = await response.json();
+
+        hideLoading();
+
+        // Show success message
+        showResetTotpSuccess(studentName, result.message);
+
+        // Reload student data
+        await loadAllStudents();
+
+    } catch (error) {
+        hideLoading();
+        console.error('Reset TOTP error:', error);
+        showAlert(error.message || 'Failed to reset TOTP. Please try again.', 'error');
+    }
+}
+
+/**
+ * Show Reset TOTP Success
+ */
+function showResetTotpSuccess(studentName, message) {
+    const modal = document.getElementById('resetTotpConfirmModal');
+    const content = document.getElementById('resetTotpConfirmContent');
+
+    content.innerHTML = `
+        <div class="result-card success">
+            <div class="result-icon">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+            </div>
+            <h3>✅ TOTP Reset Successfully!</h3>
+            <p>Two-Factor Authentication has been reset for <strong>${studentName}</strong></p>
+
+            <div class="result-details">
+                <div class="result-detail-item">
+                    <span class="result-label">Status:</span>
+                    <span class="result-value">
+                        <span class="status-badge status-warning">TOTP Disabled</span>
+                    </span>
+                </div>
+            </div>
+
+            <div class="alert alert-info" style="margin-top: 1rem; text-align: left;">
+                <strong>📱 Next Steps for Student:</strong>
+                <ol style="margin: 0.5rem 0 0 1.5rem;">
+                    <li>Student can now log in without TOTP</li>
+                    <li>Student should set up TOTP with their new device</li>
+                    <li>Visit TOTP setup page to scan new QR code</li>
+                </ol>
+            </div>
+
+            <div class="result-footer">
+                <button class="btn btn-primary" onclick="closeModal('resetTotpConfirmModal')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    Done
+                </button>
+            </div>
+        </div>
+    `;
+
+    showModal('resetTotpConfirmModal');
 }
 
 // ==================== STUDENT DELETION ====================
@@ -2131,7 +2401,12 @@ async function loadAttendanceRecordsNew(startDate, endDate) {
         currentAttendanceDateRange = `${formatDate(startDate)} to ${formatDate(endDate)}`;
 
         displayAttendanceRecordsNew(records);
-        document.getElementById('downloadBtnNew').style.display = records.length > 0 ? 'inline-flex' : 'none';
+
+        // Only update download button if it exists (when on attendance tab)
+        const downloadBtn = document.getElementById('downloadBtnNew');
+        if (downloadBtn) {
+            downloadBtn.style.display = records.length > 0 ? 'inline-flex' : 'none';
+        }
 
         showAlert(`Loaded ${records.length} records`, 'success');
 
@@ -2469,7 +2744,12 @@ function displayIncompleteRecords(records) {
     const longSession = [];
 
     records.forEach(r => {
-        const hours = parseFloat(calculateElapsedHours(r.timeIn));
+        let hours;
+        if (r.status === 'AUTO_TIMED_OUT' && r.totalHours) {
+            hours = parseFloat(r.totalHours);
+        } else {
+            hours = parseFloat(calculateElapsedHours(r.timeIn));
+        }
 
         if (r.status === 'TIMED_IN' && hours >= 12) {
             criticalRecords.push(r);
@@ -2478,7 +2758,6 @@ function displayIncompleteRecords(records) {
         } else if (r.status === 'INCOMPLETE') {
             incomplete.push(r);
         } else if (r.status === 'TIMED_IN' && hours >= 10) {
-            // Show TIMED_IN records that are 10+ hours (but less than 12)
             longSession.push(r);
         }
     });
@@ -2568,9 +2847,22 @@ function displayIncompleteRecords(records) {
 }
 
 function createCorrectionCard(record, severity) {
-    const now = new Date();
-    const timeInDate = new Date(record.timeIn);
-    const hoursWorked = (now - timeInDate) / (1000 * 60 * 60);
+    let hoursWorked;
+    let hoursLabel;
+
+    if (record.status === 'AUTO_TIMED_OUT' || record.status === 'INCOMPLETE' || record.status === 'ADMIN_CORRECTED') {
+        hoursWorked = parseFloat(record.totalHours || 0);
+        hoursLabel = '(recorded hours)';
+    } else if (record.status === 'TIMED_IN') {
+        const now = new Date();
+        const timeInDate = new Date(record.timeIn);
+        hoursWorked = (now - timeInDate) / (1000 * 60 * 60);
+        hoursLabel = '(estimated - still working)';
+    } else {
+        hoursWorked = parseFloat(record.totalHours || 0);
+        hoursLabel = '';
+    }
+
     const isOvertime = hoursWorked >= 12;
 
     // Determine the issue type and message
@@ -2642,12 +2934,13 @@ function createCorrectionCard(record, severity) {
                     <span class="detail-label">⏱️ Hours Worked:</span>
                     <span class="detail-value ${isOvertime ? 'text-error' : ''}">
                         <strong>${formatHoursMinutes(hoursWorked)}</strong>
-                        ${isOvertime ? ' <span class="overtime-warning">⚠️ OVERTIME</span>' : ' (estimated)'}
+                        <span style="font-size: 0.75rem; color: var(--text-muted);"> ${hoursLabel}</span>
+                        ${isOvertime && record.status === 'TIMED_IN' ? ' <span class="overtime-warning">⚠️ OVERTIME</span>' : ''}
                     </span>
                 </div>
             </div>
 
-            ${isOvertime ? `
+            ${isOvertime && record.status === 'TIMED_IN' ? `
                 <div class="alert alert-error" style="margin-top: 1rem;">
                     <strong>⚠️ URGENT:</strong> This student has been working for over 12 hours!
                     Please review immediately and either correct the time or mark as accurate if they actually worked these hours.
@@ -2681,13 +2974,23 @@ async function correctTime(recordId) {
         if (record) {
             currentCorrectionRecord = record;
 
+            let displayHours;
+            if (record.status === 'TIMED_IN') {
+                displayHours = parseFloat(calculateElapsedHours(record.timeIn));
+            } else {
+                displayHours = parseFloat(record.totalHours || 0);
+            }
+
             document.getElementById('correctionDetails').innerHTML = `
                 <div class="alert alert-info">
                     <div><strong>Student:</strong> ${record.studentName} (<span class="badge-number">${record.idBadge}</span>)</div>
                     <div><strong>Date:</strong> ${formatDate(record.attendanceDate)}</div>
                     <div><strong>Time In:</strong> ${formatTime(record.timeIn)}</div>
                     <div><strong>Status:</strong> ${record.status}</div>
-                    <div><strong>Current Hours:</strong> ${formatHoursMinutes(parseFloat(calculateElapsedHours(record.timeIn)))}</div>
+                    <div><strong>Current Logged Hours:</strong> ${formatHoursMinutes(displayHours)}</div>
+                </div>
+                <div class="alert alert-warning">
+                    <strong>⚠️ Important:</strong> Enter the ACTUAL hours this student worked (0-16). This will REPLACE their current hours.
                 </div>
             `;
             showModal('timeCorrectionModal');
@@ -2743,8 +3046,11 @@ async function submitTimeCorrection(event) {
         hideLoading();
 
         if (response.ok) {
-            // CLOSE MODAL IMMEDIATELY, THEN SHOW NOTIFICATION
             closeModal('timeCorrectionModal');
+
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+
             document.getElementById('timeCorrectionForm').reset();
             currentCorrectionRecord = null;
 
@@ -2758,20 +3064,22 @@ async function submitTimeCorrection(event) {
             ]);
         } else {
             const data = await response.json();
-            showAlert(data.message || 'Correction failed', 'error');
 
-            // Re-enable button on error
+            // Re-enable button and show error
             submitBtn.disabled = false;
             submitBtn.innerHTML = originalText;
+
+            showAlert(data.message || 'Correction failed', 'error');
         }
     } catch (error) {
         hideLoading();
         console.error('Correction error:', error);
-        showAlert('Correction failed. Please try again.', 'error');
 
-        // Re-enable button on error
+        // Re-enable button and show error
         submitBtn.disabled = false;
         submitBtn.innerHTML = originalText;
+
+        showAlert('Correction failed. Please try again.', 'error');
     }
 }
 
@@ -2784,12 +3092,32 @@ async function markAsCorrect(recordId) {
         return;
     }
 
+    // ✅ FIX: Use the already calculated hours from the record
+    let hoursWorked;
+
+    if (record.status === 'AUTO_TIMED_OUT' || record.status === 'ADMIN_CORRECTED') {
+        // Record already has calculated hours - use them!
+        hoursWorked = parseFloat(record.totalHours || 0);
+    } else if (record.status === 'TIMED_IN') {
+        // Still timed in - calculate from now
+        const now = new Date();
+        const timeIn = new Date(record.timeIn);
+        hoursWorked = (now - timeIn) / (1000 * 60 * 60);
+    } else if (record.status === 'TIMED_OUT') {
+        // Already timed out - use existing hours
+        hoursWorked = parseFloat(record.totalHours || 0);
+    } else {
+        // Fallback
+        hoursWorked = parseFloat(record.totalHours || 0);
+    }
+
     const confirmed = confirm(
         `Mark this record as correct?\n\n` +
         `Student: ${record.studentName}\n` +
         `Date: ${formatDate(record.attendanceDate)}\n` +
         `Time In: ${formatTime(record.timeIn)}\n` +
-        `Hours: ${formatHoursMinutes(parseFloat(calculateElapsedHours(record.timeIn)))}\n\n` +
+        `Time Out: ${record.timeOut ? formatTime(record.timeOut) : 'Auto timed out'}\n` +
+        `Hours: ${formatHoursMinutes(hoursWorked)}\n\n` +
         `This will mark the record as reviewed and remove it from the corrections list.`
     );
 
@@ -2798,11 +3126,6 @@ async function markAsCorrect(recordId) {
     showLoading();
 
     try {
-        // Calculate the actual hours worked
-        const now = new Date();
-        const timeIn = new Date(record.timeIn);
-        const hoursWorked = (now - timeIn) / (1000 * 60 * 60);
-
         const response = await fetch(`${API_BASE_URL}/admin/attendance/correct`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -3110,9 +3433,6 @@ async function showManualEntryConfirmation(payload, isComplete) {
     showModal('manualEntryConfirmModal');
 }
 
-/**
- * Execute the manual entry after confirmation
- */
 async function executeManualEntry() {
     const modal = document.getElementById('manualEntryConfirmModal');
     const payload = JSON.parse(modal.dataset.payload);
@@ -3136,20 +3456,25 @@ async function executeManualEntry() {
 
         hideLoading();
 
-        // Close the manual entry modal BEFORE showing result
         closeModal('manualEntryModal');
 
-        // Show success modal
         showManualEntrySuccess(result);
 
-        // Refresh relevant data
-        await Promise.all([
-            loadDashboard(),
-            currentTab === 'attendance' ? loadAttendanceRecordsNew(
-                document.getElementById('customStartDate').value || formatDate(new Date()),
-                document.getElementById('customEndDate').value || formatDate(new Date())
-            ) : Promise.resolve()
-        ]);
+        try {
+            await loadDashboard();
+
+            if (currentTab === 'attendance') {
+                const startDate = document.getElementById('customStartDate')?.value;
+                const endDate = document.getElementById('customEndDate')?.value;
+
+                if (startDate && endDate) {
+                    await loadAttendanceRecordsNew(startDate, endDate);
+                }
+            }
+        } catch (refreshError) {
+            console.error('Failed to refresh data after manual entry:', refreshError);
+            // Don't show error to user since the entry was successful
+        }
 
     } catch (error) {
         hideLoading();
@@ -5053,6 +5378,256 @@ function deselectAllNotifications() {
     document.querySelectorAll('.notification-checkbox').forEach(cb => cb.checked = false);
 }
 
+// ==================== SCHEDULE OVERRIDE REQUESTS ====================
+
+async function loadScheduleOverrideRequests() {
+    showLoading();
+    try {
+        const response = await fetch(`${API_BASE_URL}/schedule-override/admin/pending`);
+
+        if (response.ok) {
+            const data = await response.json();
+            const requests = data.pendingRequests || [];
+            displayScheduleOverrideRequests(requests);
+
+            // Update badge count
+            updateOverrideBadgeCount(requests.length);
+        } else {
+            showAlert('Failed to load schedule override requests', 'error');
+        }
+    } catch (error) {
+        console.error('Failed to load schedule override requests:', error);
+        showAlert('Failed to load schedule override requests', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function displayScheduleOverrideRequests(requests) {
+    const container = document.getElementById('scheduleOverrideRequestsList');
+
+    if (!container) {
+        console.error('Schedule override requests container not found');
+        return;
+    }
+
+    if (requests.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state-modern">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <h3>✅ No Pending Requests</h3>
+                <p>All schedule override requests have been reviewed</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = requests.map(request => createOverrideRequestCard(request)).join('');
+}
+
+function createOverrideRequestCard(request) {
+    return `
+        <div class="override-request-card">
+            <div class="override-card-header">
+                <div class="override-student-info">
+                    <h4>
+                        ${request.studentName}
+                        <span class="badge-number">${request.idBadge}</span>
+                    </h4>
+                    <div class="override-time-badge">
+                        🕐 ${request.earlyMinutes} minutes early
+                    </div>
+                </div>
+                <div class="override-actions">
+                    <button class="btn btn-success" onclick="approveOverrideRequest(${request.id}, '${request.studentName}')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        Approve
+                    </button>
+                    <button class="btn btn-error" onclick="rejectOverrideRequest(${request.id}, '${request.studentName}')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                        Reject
+                    </button>
+                </div>
+            </div>
+
+            <div class="override-details">
+                <div class="override-detail-item">
+                    <span class="detail-label">📅 Date:</span>
+                    <span class="detail-value">${formatDate(request.requestedAt)}</span>
+                </div>
+                <div class="override-detail-item">
+                    <span class="detail-label">⏰ Scheduled Time:</span>
+                    <span class="detail-value">${formatTimeOnly(request.scheduledTime)}</span>
+                </div>
+                <div class="override-detail-item">
+                    <span class="detail-label">🕐 Actual Arrival:</span>
+                    <span class="detail-value">${formatTimeOnly(request.actualTime)}</span>
+                </div>
+                <div class="override-detail-item">
+                    <span class="detail-label">📊 Record ID:</span>
+                    <span class="detail-value">#${request.attendanceRecordId}</span>
+                </div>
+            </div>
+
+            <div class="override-reason">
+                <div class="override-reason-label">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                    </svg>
+                    Student's Reason:
+                </div>
+                <div class="override-reason-text">${request.reason}</div>
+            </div>
+        </div>
+    `;
+}
+
+function approveOverrideRequest(requestId, studentName) {
+    // Show approval modal
+    showOverrideReviewModal(requestId, studentName, 'APPROVE');
+}
+
+function rejectOverrideRequest(requestId, studentName) {
+    // Show rejection modal
+    showOverrideReviewModal(requestId, studentName, 'REJECT');
+}
+
+function showOverrideReviewModal(requestId, studentName, action) {
+    const modal = document.getElementById('overrideReviewModal');
+    const form = document.getElementById('overrideReviewForm');
+    const title = document.getElementById('overrideReviewTitle');
+    const adminResponse = document.getElementById('overrideAdminResponse');
+
+    // Set modal title and styling
+    if (action === 'APPROVE') {
+        title.innerHTML = `
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; color: var(--success-color);">
+                <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            Approve Schedule Override
+        `;
+        adminResponse.placeholder = "Optional: Add a message to the student (e.g., 'Approved. Thank you for notifying us.')";
+    } else {
+        title.innerHTML = `
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; color: var(--error-color);">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+            Reject Schedule Override
+        `;
+        adminResponse.placeholder = "Required: Explain why this request is being rejected";
+        adminResponse.required = true;
+    }
+
+    // Set student info
+    document.getElementById('overrideStudentName').textContent = studentName;
+
+    // Store data for submission
+    modal.dataset.requestId = requestId;
+    modal.dataset.action = action;
+
+    // Clear previous response
+    adminResponse.value = '';
+
+    showModal('overrideReviewModal');
+}
+
+async function submitOverrideReview(event) {
+    event.preventDefault();
+
+    const modal = document.getElementById('overrideReviewModal');
+    const requestId = modal.dataset.requestId;
+    const action = modal.dataset.action;
+    const adminResponse = document.getElementById('overrideAdminResponse').value.trim();
+
+    // Validation for rejection
+    if (action === 'REJECT' && !adminResponse) {
+        showAlert('Please provide a reason for rejection', 'error');
+        return;
+    }
+
+    const submitBtn = event.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<div class="spinner" style="width: 16px; height: 16px; margin: 0 auto;"></div> Processing...';
+
+    showLoading();
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/schedule-override/admin/review/${requestId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: action,
+                adminUsername: 'admin', // You can get this from session if you have user management
+                adminResponse: adminResponse || null
+            })
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+
+            hideLoading();
+            closeModal('overrideReviewModal');
+
+            showAlert(
+                action === 'APPROVE'
+                    ? '✅ Schedule override request approved successfully!'
+                    : '❌ Schedule override request rejected',
+                action === 'APPROVE' ? 'success' : 'info'
+            );
+
+            // Reload requests and notifications
+            await Promise.all([
+                loadScheduleOverrideRequests(),
+                loadNotifications()
+            ]);
+
+        } else {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to process request');
+        }
+    } catch (error) {
+        hideLoading();
+        console.error('Review submission error:', error);
+        showAlert(error.message || 'Failed to process schedule override request', 'error');
+
+        // Re-enable button
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+    }
+}
+
+function updateOverrideBadgeCount(count) {
+    const badge = document.getElementById('overrideBadgeCount');
+    if (badge) {
+        badge.textContent = count;
+        badge.style.display = count > 0 ? 'inline-flex' : 'none';
+    }
+}
+
+async function loadOverrideCount() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/schedule-override/admin/pending-count`);
+        if (response.ok) {
+            const data = await response.json();
+            updateOverrideBadgeCount(data.count || 0);
+        }
+    } catch (error) {
+        console.error('Failed to load override count:', error);
+    }
+}
+
 // ==================== SETTINGS TAB ====================
 async function loadSettings() {
     try {
@@ -5373,5 +5948,3 @@ function startPeriodicRefresh() {
         }
     }, 120000);
 }
-
-console.log('✅ TERA IT Admin Panel - Clean Version Loaded Successfully');

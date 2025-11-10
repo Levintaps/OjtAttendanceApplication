@@ -1711,6 +1711,25 @@ custom-date-inputs {
     margin-top: 0.25rem;
 }
 
+/* Absent Student Visual Indicator */
+.attendance-indicator.absent {
+    background: linear-gradient(135deg, #fee2e2, #fca5a5);
+    color: #991b1b;
+    border: 1px solid #f87171;
+    font-weight: 600;
+}
+
+/* Highlight filter chip for absent */
+.filter-chip[data-filter="absent-today"].active {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+}
+
+.filter-chip[data-filter="absent-today"]:not(.active):hover {
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
 /* ==================== CORRECTION SECTIONS ==================== */
 
 .correction-section {
@@ -2061,6 +2080,130 @@ custom-date-inputs {
 
 .sidebar-stat-value {
     animation: badgePulse 2s ease-in-out infinite;
+}
+
+/* ==================== SCHEDULE OVERRIDE REQUESTS ==================== */
+
+.override-request-card {
+    background: var(--bg-secondary);
+    border-radius: var(--border-radius-lg);
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    border-left: 4px solid var(--warning-color);
+    transition: var(--transition-normal);
+}
+
+.override-request-card:hover {
+    transform: translateX(4px);
+    box-shadow: var(--shadow-md);
+}
+
+.override-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.override-student-info h4 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.override-time-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    color: #92400e;
+    border: 2px solid #f59e0b;
+}
+
+.override-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.override-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-primary);
+    border-radius: var(--border-radius-lg);
+    border: 1px solid var(--border-color);
+    margin-bottom: 1rem;
+}
+
+.override-detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.override-detail-item .detail-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.override-detail-item .detail-value {
+    font-size: 1rem;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.override-reason {
+    background: var(--bg-primary);
+    padding: 1rem;
+    border-radius: var(--border-radius-lg);
+    border: 1px solid var(--border-color);
+}
+
+.override-reason-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.override-reason-text {
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    line-height: 1.6;
+    padding-left: 1.5rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .override-card-header {
+        flex-direction: column;
+    }
+
+    .override-actions {
+        width: 100%;
+    }
+
+    .override-actions .btn {
+        flex: 1;
+    }
 }
 
 /* ==================== BUTTONS ==================== */
@@ -4627,4 +4770,30 @@ textarea,
         display: grid;
         grid-template-columns: repeat(2, 1fr);
     }
+}
+
+/* TOTP Reset Styles */
+.menu-item.warning {
+    color: var(--warning-color, #f59e0b);
+}
+
+.menu-item.warning:hover {
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.confirm-entry-card.warning {
+    border-left: 4px solid var(--warning-color, #f59e0b);
+}
+
+.confirm-icon.warning {
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--warning-color, #f59e0b);
+}
+
+.detail-value.reason {
+    background: rgba(0, 0, 0, 0.05);
+    padding: 0.75rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    line-height: 1.5;
 }
