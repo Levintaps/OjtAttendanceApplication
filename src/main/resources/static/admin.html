@@ -818,19 +818,19 @@
                     </div>
 
                     <div class="sidebar-section">
-                        <h3>🔍 Filters</h3>
-                        <div class="filter-chips">
-                            <button class="filter-chip active" onclick="document.getElementById('productivityFilter').value='all'; filterLiveTasks();" data-filter="all">
-                                <span class="filter-chip-label">All Students</span>
+                        <h3>🔧 Card Controls</h3>
+                        <div class="quick-actions">
+                            <button class="quick-action-btn" onclick="expandAllTaskCards()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                                Expand All
                             </button>
-                            <button class="filter-chip" onclick="document.getElementById('productivityFilter').value='very-active'; filterLiveTasks();" data-filter="very-active">
-                                <span class="filter-chip-label">🟢 Very Active</span>
-                            </button>
-                            <button class="filter-chip" onclick="document.getElementById('productivityFilter').value='active'; filterLiveTasks();" data-filter="active">
-                                <span class="filter-chip-label">🟡 Active</span>
-                            </button>
-                            <button class="filter-chip" onclick="document.getElementById('productivityFilter').value='idle'; filterLiveTasks();" data-filter="idle">
-                                <span class="filter-chip-label">🔴 Idle</span>
+                            <button class="quick-action-btn" onclick="collapseAllTaskCards()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="18 15 12 9 6 15"></polyline>
+                                </svg>
+                                Collapse All
                             </button>
                         </div>
                     </div>

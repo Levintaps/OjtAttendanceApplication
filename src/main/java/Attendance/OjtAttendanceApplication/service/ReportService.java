@@ -75,15 +75,15 @@ public class ReportService {
                     "Total Hours", "Regular Hours", "Overtime Hours", "Undertime Hours",
                     "Break Deducted", "Tasks Completed", "Status"};
 
+            // Create header style
+            CellStyle headerStyle = workbook.createCellStyle();
+            Font font = workbook.createFont();
+            font.setBold(true);
+            headerStyle.setFont(font);
+
             for (int i = 0; i < headers.length; i++) {
                 Cell cell = headerRow.createCell(i);
                 cell.setCellValue(headers[i]);
-
-                // Style header
-                CellStyle headerStyle = workbook.createCellStyle();
-                Font font = workbook.createFont();
-                font.setBold(true);
-                headerStyle.setFont(font);
                 cell.setCellStyle(headerStyle);
             }
 
@@ -113,9 +113,12 @@ public class ReportService {
                 row.createCell(12).setCellValue(record.getStatus());
             }
 
-            // Auto-size columns
+            // Auto-size columns with better handling
             for (int i = 0; i < headers.length; i++) {
                 sheet.autoSizeColumn(i);
+                // Add extra padding (10% more width)
+                int currentWidth = sheet.getColumnWidth(i);
+                sheet.setColumnWidth(i, (int) (currentWidth * 1.1));
             }
 
             ByteArrayOutputStream outputStream = new ByteArrayOutputStream();

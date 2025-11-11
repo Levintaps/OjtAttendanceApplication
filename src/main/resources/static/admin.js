@@ -279,6 +279,12 @@ async function loadTabData(tabName) {
         case 'notifications':
             await loadNotificationsTab();
             break;
+        case 'reports':
+            if (studentsCache.length === 0) {
+                await loadAllStudents();
+            }
+            await updateReportStats();
+            break;
         case 'settings':
             await loadSettings();
             break;
@@ -4193,10 +4199,14 @@ function calculateProductivity(student) {
 
         lastActivity = `Last task: ${formatTimeAgo(lastTask.completedAt)}`;
 
-        // Show idle warning if no tasks for 2+ hours
-        if (minutesSinceLastTask > 120) {
+        // Show idle warning if no tasks for 2+ hours (120 minutes)
+        // This applies regardless of how many tasks they have total
+        if (minutesSinceLastTask >= 120) {
             idleWarning = true;
         }
+    } else if (hoursWorked >= 2) {
+        // Also warn if they've been working 2+ hours with NO tasks at all
+        idleWarning = true;
     }
 
     return {
@@ -4216,20 +4226,62 @@ function createTaskCard(student, productivity) {
     const timeInDate = new Date(student.record.timeIn);
     const workingTime = formatWorkingTime(timeInDate, now);
 
-    // Get first 5 tasks
     const displayTasks = student.tasks.slice(-5).reverse();
     const hasMoreTasks = student.tasks.length > 5;
 
+    // idle detection
+    let isIdleWarning = false;
+    let idleHours = 0;
+
+    if (student.tasks.length > 0) {
+        const lastTask = student.tasks[student.tasks.length - 1];
+        const lastTaskTime = new Date(lastTask.completedAt);
+        const minutesSinceLastTask = (now - lastTaskTime) / (1000 * 60);
+
+        if (minutesSinceLastTask >= 120) {
+            isIdleWarning = true;
+            idleHours = (minutesSinceLastTask / 60).toFixed(1);
+        }
+    } else {
+        const hoursWorked = (now - timeInDate) / (1000 * 60 * 60);
+        if (hoursWorked >= 2) {
+            isIdleWarning = true;
+            idleHours = hoursWorked.toFixed(1);
+        }
+    }
+
+    let displayProductivity = productivity;
+    if (isIdleWarning) {
+        displayProductivity = {
+            level: 'idle',
+            color: '#ef4444',
+            label: `IDLE ${idleHours}h`,
+            icon: '⚠️',
+            lastActivity: productivity.lastActivity,
+            idleWarning: true,
+            hoursWorked: productivity.hoursWorked
+        };
+    }
+
     return `
-        <div class="task-card" data-productivity="${productivity.level}">
-            <div class="task-card-header" style="background: ${productivity.color};">
+        <div class="task-card collapsed"
+             data-productivity="${displayProductivity.level}"
+             data-idle-warning="${isIdleWarning}"
+             data-record-id="${student.record.id}">
+
+            <div class="task-card-header" onclick="toggleTaskCard(${student.record.id}, event)">
                 <div class="task-card-title">
                     <div class="task-card-name">${student.record.studentName}</div>
                     <div class="task-card-badge">${student.record.idBadge}</div>
                 </div>
                 <div class="task-card-status">
-                    <span class="productivity-badge">${productivity.icon} ${productivity.label}</span>
+                    <span class="productivity-badge">${displayProductivity.icon} ${displayProductivity.label}</span>
                     <span class="task-count-badge">${student.taskCount} tasks</span>
+                    <div class="expand-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </div>
                 </div>
             </div>
 
@@ -4240,15 +4292,16 @@ function createTaskCard(student, productivity) {
                         <span class="info-value">${workingTime}</span>
                     </div>
                     <div class="info-item">
-                        <span class="info-label">📍 Status:</span>
-                        <span class="info-value">${productivity.lastActivity}</span>
+                        <span class="info-label">📊 Status:</span>
+                        <span class="info-value">${displayProductivity.lastActivity}</span>
                     </div>
-                    ${productivity.idleWarning ? `
-                        <div class="idle-warning">
-                            ⚠️ No tasks logged for 2+ hours
-                        </div>
-                    ` : ''}
                 </div>
+
+                ${isIdleWarning ? `
+                    <div class="idle-warning">
+                        🚨 No tasks logged for ${idleHours}+ hours - Please check on this student immediately!
+                    </div>
+                ` : ''}
 
                 <div class="task-list">
                     ${displayTasks.length > 0 ? `
@@ -4261,7 +4314,7 @@ function createTaskCard(student, productivity) {
                             </div>
                         `).join('')}
                         ${hasMoreTasks ? `
-                            <button class="btn btn-sm btn-info view-all-tasks" onclick="showAllTasks(${student.record.id}, '${student.record.studentName}')">
+                            <button class="btn btn-sm btn-info view-all-tasks" onclick="event.stopPropagation(); showAllTasks(${student.record.id}, '${student.record.studentName}')">
                                 View All ${student.taskCount} Tasks
                             </button>
                         ` : ''}
@@ -4274,15 +4327,65 @@ function createTaskCard(student, productivity) {
             </div>
 
             <div class="task-card-footer">
-                <button class="btn btn-sm btn-info" onclick="viewStudentProgress('${student.record.idBadge}')">
+                <button class="btn btn-sm btn-info" onclick="event.stopPropagation(); viewStudentProgress('${student.record.idBadge}')">
                     👤 View Profile
                 </button>
-                <button class="btn btn-sm btn-success" onclick="showAllTasks(${student.record.id}, '${student.record.studentName}')">
+                <button class="btn btn-sm btn-success" onclick="event.stopPropagation(); showAllTasks(${student.record.id}, '${student.record.studentName}')">
                     📋 All Tasks
                 </button>
             </div>
         </div>
     `;
+}
+
+// Toggle task card expand/collapse
+function toggleTaskCard(recordId, event) {
+    // Stop event propagation first
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+    }
+
+    // Get ONLY the specific card by its unique record ID
+    const targetCard = document.querySelector(`.task-card[data-record-id="${recordId}"]`);
+
+    if (!targetCard) {
+        console.error('❌ Card not found for record ID:', recordId);
+        return;
+    }
+
+    // Check current state
+    const isCurrentlyCollapsed = targetCard.classList.contains('collapsed');
+
+    // Toggle ONLY this specific card
+    if (isCurrentlyCollapsed) {
+        targetCard.classList.remove('collapsed');
+        targetCard.classList.add('expanded');
+    } else {
+        targetCard.classList.remove('expanded');
+        targetCard.classList.add('collapsed');
+    }
+}
+
+// Expand all cards
+function expandAllTaskCards() {
+    const cards = document.querySelectorAll('.task-card');
+    cards.forEach(card => {
+        card.classList.remove('collapsed');
+        card.classList.add('expanded');
+    });
+    showAlert(`Expanded ${cards.length} cards`, 'info');
+}
+
+// Collapse all cards
+function collapseAllTaskCards() {
+    const cards = document.querySelectorAll('.task-card');
+    cards.forEach(card => {
+        card.classList.add('collapsed');
+        card.classList.remove('expanded');
+    });
+    showAlert(`Collapsed ${cards.length} cards`, 'info');
 }
 
 // Show all tasks in modal
@@ -4456,18 +4559,54 @@ async function downloadExcelReport() {
     }
 
     showLoading();
-    try {
-        const response = await fetch(`${API_BASE_URL}/reports/excel?startDate=${startDate}&endDate=${endDate}`);
 
-        if (response.ok) {
-            const blob = await response.blob();
-            downloadFile(blob, `attendance-report-${startDate}-${endDate}.xlsx`);
-            showAlert('Excel report downloaded successfully', 'success');
-        } else {
-            showAlert('Failed to generate Excel report', 'error');
+    try {
+        // Fetch data as JSON
+        const response = await fetch(`${API_BASE_URL}/attendance/records?startDate=${startDate}&endDate=${endDate}`);
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch attendance records');
         }
+
+        const records = await response.json();
+
+        if (records.length === 0) {
+            showAlert('No records found for the selected date range', 'warning');
+            return;
+        }
+
+        // Generate CSV (Excel can open CSV files)
+        const headers = ['Date', 'Student Name', 'ID Badge', 'School', 'Time In', 'Time Out', 'Total Hours', 'Status'];
+        const csvRows = [headers.join(',')];
+
+        const studentSchoolMap = {};
+        allStudents.forEach(student => {
+            studentSchoolMap[student.idBadge] = student.school || 'N/A';
+        });
+
+        records.forEach(record => {
+            const row = [
+                formatDate(record.attendanceDate),
+                `"${record.studentName || 'Unknown'}"`,
+                record.idBadge,
+                `"${studentSchoolMap[record.idBadge] || 'N/A'}"`,
+                record.timeIn ? formatTime(record.timeIn) : '-',
+                record.timeOut ? formatTime(record.timeOut) : '-',
+                record.totalHours || '0',
+                record.status?.replace('_', ' ') || 'Unknown'
+            ];
+            csvRows.push(row.join(','));
+        });
+
+        const csvContent = csvRows.join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+
+        downloadFile(blob, `attendance-report-${startDate}-${endDate}.csv`);
+        showAlert(`✅ Downloaded ${records.length} records (CSV format - Excel compatible)`, 'success');
+
     } catch (error) {
-        showAlert('Failed to generate Excel report', 'error');
+        console.error('Excel report error:', error);
+        showAlert('Failed to generate report: ' + error.message, 'error');
     } finally {
         hideLoading();
     }
@@ -4533,6 +4672,15 @@ function generateMonthReport() {
 }
 
 // ==================== ADDITIONAL STUDENT REPORT FUNCTIONS ====================
+
+function downloadStudentsCSV() {
+    if (!studentsCache || studentsCache.length === 0) {
+        showAlert('No students to export. Please load students first.', 'warning');
+        return;
+    }
+
+    exportStudentsToCSV(studentsCache, 'all-students');
+}
 
 /**
  * Download only active students
@@ -4627,6 +4775,11 @@ function downloadProgressReport() {
  * Helper function to export students array to CSV
  */
 function exportStudentsToCSV(students, prefix = 'students') {
+    if (!students || students.length === 0) {
+        showAlert('No students to export', 'warning');
+        return;
+    }
+
     const headers = [
         'ID Badge',
         'Full Name',
@@ -4652,8 +4805,8 @@ function exportStudentsToCSV(students, prefix = 'students') {
 
         const row = [
             student.idBadge || 'N/A',
-            `"${student.fullName || 'Unknown'}"`,
-            `"${student.school || 'N/A'}"`,
+            `"${(student.fullName || 'Unknown').replace(/"/g, '""')}"`, // Escape quotes
+            `"${(student.school || 'N/A').replace(/"/g, '""')}"`, // Escape quotes
             student.status || 'ACTIVE',
             requiredHours > 0 ? requiredHours : 'Not Set',
             totalHours.toFixed(2),
@@ -5780,7 +5933,6 @@ function updateCorrectionsSidebarStats(records) {
         monthElement.textContent = thisMonth;
     }
 
-    // Add critical count to sidebar if element exists
     const criticalElement = document.getElementById('sidebarCriticalCorrections');
     if (criticalElement) {
         criticalElement.textContent = criticalCount;
@@ -5948,3 +6100,5 @@ function startPeriodicRefresh() {
         }
     }, 120000);
 }
+
+console.log('✅ TERA IT Admin Panel - Clean Version Loaded Successfully');
