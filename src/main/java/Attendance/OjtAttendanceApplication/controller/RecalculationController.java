@@ -110,4 +110,20 @@ public class RecalculationController {
             }
         };
     }
+
+    /* This is for update task with request approved
+
+    // check if the record has a task with approved text
+    SELECT id, time_in, time_out, total_hours, status, tasks_completed
+    FROM attendance_records
+    WHERE id = 94;
+
+    // Update the task to ensure for the correct recalculation
+    UPDATE attendance_records
+    SET tasks_completed = CONCAT(
+        tasks_completed,
+        '\n\n[ADMIN APPROVED SCHEDULE OVERRIDE: Early work hours will be counted for this session]'
+    )
+    WHERE id = 94;
+     */
 }

@@ -20,7 +20,7 @@ public class RecalculationService {
     private static final Logger logger = LoggerFactory.getLogger(RecalculationService.class);
 
     // Business rule constants
-    private static final int BREAK_DEDUCTION_THRESHOLD_HOURS = 5;
+    private static final int BREAK_DEDUCTION_THRESHOLD_MINUTES = 300; // 5 hours
     private static final int BREAK_DEDUCTION_MINUTES = 60;
     private static final int ROUNDING_THRESHOLD_MINUTES = 55;
     private static final int REGULAR_HOURS_CAP = 8;
@@ -33,7 +33,7 @@ public class RecalculationService {
 
     /**
      * COMPLETE: Recalculate ALL attendance records
-     * Now handles: Regular, Auto Time-outs, Admin Corrected, and Approved Overrides
+     * Handles: Regular, Auto Time-outs, Admin Corrected, and Approved Overrides
      */
     @Transactional
     public Map<String, Object> recalculateAllRecords() {
@@ -365,19 +365,19 @@ public class RecalculationService {
 
                 if (Math.abs(oldHours - newCalculation.getTotalHours()) > 0.01) {
                     updatedCount++;
-                    Map<String, Object> changeMap = new HashMap<>();
-                    changeMap.put("recordId", record.getId());
-                    changeMap.put("date", record.getAttendanceDate().toString());
-                    changeMap.put("status", record.getStatus().name());
-                    changeMap.put("recordType", typeInfo.type.toString());
-                    changeMap.put("timeIn", record.getTimeIn().toString());
-                    changeMap.put("timeOut", record.getTimeOut().toString());
-                    changeMap.put("oldHours", oldHours);
-                    changeMap.put("newHours", newCalculation.getTotalHours());
-                    changeMap.put("difference", newCalculation.getTotalHours() - oldHours);
-                    changeMap.put("breakDeducted", newCalculation.isBreakDeducted());
-                    changeMap.put("reason", typeInfo.reason);
-                    recordChanges.add(changeMap);
+                    recordChanges.add(Map.ofEntries(
+                            Map.entry("recordId", record.getId()),
+                            Map.entry("date", record.getAttendanceDate().toString()),
+                            Map.entry("status", record.getStatus().name()),
+                            Map.entry("recordType", typeInfo.type.toString()),
+                            Map.entry("timeIn", record.getTimeIn().toString()),
+                            Map.entry("timeOut", record.getTimeOut().toString()),
+                            Map.entry("oldHours", oldHours),
+                            Map.entry("newHours", newCalculation.getTotalHours()),
+                            Map.entry("difference", newCalculation.getTotalHours() - oldHours),
+                            Map.entry("breakDeducted", newCalculation.isBreakDeducted()),
+                            Map.entry("reason", typeInfo.reason)
+                    ));
                 }
             } else {
                 skippedCount++;
@@ -676,12 +676,14 @@ public class RecalculationService {
             Duration undertimeDuration = Duration.between(actualTimeOut, requiredEndTime);
             long undertimeMinutes = undertimeDuration.toMinutes();
 
-            if (workMinutes >= 300) {
-                workMinutes -= 60;
+            if (workMinutes >= BREAK_DEDUCTION_THRESHOLD_MINUTES) {
+                workMinutes -= BREAK_DEDUCTION_MINUTES;
                 calculation.setBreakDeducted(true);
             } else {
                 calculation.setBreakDeducted(false);
             }
+
+            workMinutes = Math.max(0, workMinutes);
 
             double roundedHours = convertMinutesToHoursWithRounding(workMinutes);
             double roundedUndertime = convertMinutesToHoursWithRounding(undertimeMinutes);
@@ -697,8 +699,8 @@ public class RecalculationService {
                     LocalDateTime.of(timeOut.toLocalDate(), requiredEndTime));
             long scheduledMinutes = scheduledDuration.toMinutes();
 
-            if (scheduledMinutes >= 300) {
-                scheduledMinutes -= 60;
+            if (scheduledMinutes >= BREAK_DEDUCTION_THRESHOLD_MINUTES) {
+                scheduledMinutes -= BREAK_DEDUCTION_MINUTES;
                 calculation.setBreakDeducted(true);
             } else {
                 calculation.setBreakDeducted(false);
@@ -722,8 +724,8 @@ public class RecalculationService {
                     LocalDateTime.of(timeOut.toLocalDate(), requiredEndTime));
             long scheduledMinutes = scheduledDuration.toMinutes();
 
-            if (scheduledMinutes >= 300) {
-                scheduledMinutes -= 60;
+            if (scheduledMinutes >= BREAK_DEDUCTION_THRESHOLD_MINUTES) {
+                scheduledMinutes -= BREAK_DEDUCTION_MINUTES;
                 calculation.setBreakDeducted(true);
             } else {
                 calculation.setBreakDeducted(false);
@@ -748,8 +750,8 @@ public class RecalculationService {
         HoursCalculation calculation = new HoursCalculation();
         calculation.setBreakDeducted(false);
 
-        if (totalMinutes >= 300) {
-            totalMinutes -= 60;
+        if (totalMinutes >= BREAK_DEDUCTION_THRESHOLD_MINUTES) {
+            totalMinutes -= BREAK_DEDUCTION_MINUTES;
             calculation.setBreakDeducted(true);
         }
 
