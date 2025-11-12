@@ -400,14 +400,10 @@ public class AttendanceService {
         LocalDateTime timeIn = record.getTimeIn();
         LocalDateTime timeOut = record.getTimeOut();
 
-        // Check if schedule override was approved
-        boolean scheduleOverrideApproved = false;
-        if (record.getTasksCompleted() != null &&
-                record.getTasksCompleted().contains("[ADMIN APPROVED SCHEDULE OVERRIDE")) {
-            scheduleOverrideApproved = true;
-        }
+        // Check if schedule override was APPROVED (not just requested)
+        boolean scheduleOverrideApproved = isScheduleOverrideApproved(record);
 
-        // If schedule override approved, count ALL actual hours worked (early hours included)
+        // If schedule override approved, count ALL actual hours worked
         if (scheduleOverrideApproved) {
             return calculateOriginalHours(timeIn, timeOut);
         }
@@ -417,89 +413,137 @@ public class AttendanceService {
             return calculateOriginalHours(timeIn, timeOut);
         }
 
-        // === STRICT SCHEDULE ENFORCEMENT (only when NO override approved) ===
+        // === STRICT SCHEDULE ENFORCEMENT ===
+        // Early arrivals are NOT counted unless approved
+        return calculateStrictScheduleHours(student, timeIn, timeOut);
+    }
 
+    private boolean isScheduleOverrideApproved(AttendanceRecord record) {
+        if (record.getTasksCompleted() == null) {
+            return false;
+        }
+
+        String tasks = record.getTasksCompleted();
+
+        // Check for explicit approval markers (exact phrases admin adds)
+        return tasks.contains("[ADMIN APPROVED SCHEDULE OVERRIDE]") ||
+                tasks.contains("[ADMIN APPROVED: Early work hours counted") ||
+                tasks.contains("Early work hours will be counted for this session");
+    }
+
+    private HoursCalculation calculateStrictScheduleHours(Student student, LocalDateTime timeIn, LocalDateTime timeOut) {
         LocalTime actualTimeIn = timeIn.toLocalTime();
         LocalTime actualTimeOut = timeOut.toLocalTime();
         LocalTime scheduledStart = student.getScheduledStartTime();
         LocalTime scheduledEnd = student.getScheduledEndTime();
+        int gracePeriod = student.getGracePeriodMinutes();
 
-        // Calculate scheduled work duration (e.g., 10:00 AM - 7:00 PM = 9 hours)
-        Duration scheduledDuration = Duration.between(scheduledStart, scheduledEnd);
-        double scheduledHours = scheduledDuration.toMinutes() / 60.0;
+        // Determine EFFECTIVE start time
+        LocalTime effectiveStartTime;
 
-        HoursCalculation calculation = new HoursCalculation();
+        if (actualTimeIn.isBefore(scheduledStart)) {
+            // EARLY ARRIVAL: Use scheduled start, ignore early hours
+            effectiveStartTime = scheduledStart;
+            System.out.println("DEBUG: Early arrival detected. Using scheduled start: " + scheduledStart);
+        } else if (actualTimeIn.isAfter(scheduledStart.plusMinutes(gracePeriod))) {
+            // LATE ARRIVAL: Use actual arrival time
+            effectiveStartTime = actualTimeIn;
+            System.out.println("DEBUG: Late arrival detected. Using actual start: " + actualTimeIn);
+        } else {
+            // ON TIME: Use scheduled start
+            effectiveStartTime = scheduledStart;
+            System.out.println("DEBUG: On-time arrival. Using scheduled start: " + scheduledStart);
+        }
 
-        // Determine if student was late
-        boolean isLate = actualTimeIn.isAfter(scheduledStart.plusMinutes(student.getGracePeriodMinutes()));
+        // Determine if student was late (for calculating required end time)
+        boolean wasLate = actualTimeIn.isAfter(scheduledStart.plusMinutes(gracePeriod));
 
-        // Calculate expected end time
+        // Calculate required end time
         LocalTime requiredEndTime;
-
-        if (isLate) {
+        if (wasLate) {
             // LATE: Must work extra to complete scheduled hours
             long lateMinutes = Duration.between(
-                    scheduledStart.plusMinutes(student.getGracePeriodMinutes()),
+                    scheduledStart.plusMinutes(gracePeriod),
                     actualTimeIn
             ).toMinutes();
-
             requiredEndTime = scheduledEnd.plusMinutes(lateMinutes);
         } else {
-            // EARLY or ON-TIME: Required end time is still scheduled end time
-            // Early hours are NOT counted unless override approved
+            // ON-TIME or EARLY: Required end time is scheduled end time
             requiredEndTime = scheduledEnd;
         }
 
-        // Calculate actual work duration
-        Duration actualDuration = Duration.between(timeIn, timeOut);
-        double rawHours = actualDuration.toMinutes() / 60.0;
+        // === Calculate work duration from EFFECTIVE start (not actual arrival) ===
+        LocalDateTime effectiveStartDateTime = LocalDateTime.of(timeIn.toLocalDate(), effectiveStartTime);
 
-        // Apply break deduction if worked 5+ hours
-        if (rawHours >= BREAK_DEDUCTION_THRESHOLD_HOURS) {
-            rawHours -= BREAK_DEDUCTION_HOURS;
-            calculation.setBreakDeducted(true);
-        } else {
-            calculation.setBreakDeducted(false);
+        // Handle case where effective start might be "tomorrow" if schedule crosses midnight
+        if (effectiveStartTime.isAfter(actualTimeOut) && !wasLate) {
+            effectiveStartDateTime = effectiveStartDateTime.minusDays(1);
         }
 
-        // Apply 55-minute rounding rule
-        double roundedHours = applyRoundingRule(rawHours);
+        Duration workDuration = Duration.between(effectiveStartDateTime, timeOut);
+        long workMinutes = workDuration.toMinutes();
 
-        // === DETERMINE REGULAR vs OVERTIME vs UNDERTIME ===
+        // Ensure work minutes is not negative (shouldn't happen, but safety check)
+        if (workMinutes < 0) {
+            workMinutes = 0;
+        }
 
-        // Check if student left before required end time
+        HoursCalculation calculation = new HoursCalculation();
+
         if (actualTimeOut.isBefore(requiredEndTime)) {
+            // ========================================
             // UNDERTIME: Left before required end time
+            // ========================================
             Duration undertimeDuration = Duration.between(actualTimeOut, requiredEndTime);
-            double undertimeHours = undertimeDuration.toMinutes() / 60.0;
+            long undertimeMinutes = undertimeDuration.toMinutes();
 
-            // Apply rounding to undertime
-            undertimeHours = applyRoundingRule(undertimeHours);
+            // Apply break deduction if worked >= 5 hours
+            if (workMinutes >= 300) { // 5 hours = 300 minutes
+                workMinutes -= 60; // Deduct 1 hour
+                calculation.setBreakDeducted(true);
+            } else {
+                calculation.setBreakDeducted(false);
+            }
+
+            // Ensure non-negative hours
+            workMinutes = Math.max(0, workMinutes);
+
+            double roundedHours = convertMinutesToHoursWithRounding(workMinutes);
+            double roundedUndertime = convertMinutesToHoursWithRounding(undertimeMinutes);
 
             calculation.setTotalHours(roundedHours);
-            calculation.setRegularHours(Math.max(0, roundedHours));
+            calculation.setRegularHours(roundedHours);
             calculation.setOvertimeHours(0.0);
-            calculation.setUndertimeHours(undertimeHours);
+            calculation.setUndertimeHours(roundedUndertime);
 
         } else if (actualTimeOut.isAfter(requiredEndTime)) {
+            // ========================================
             // OVERTIME: Stayed after required end time
-            Duration overtimeDuration = Duration.between(requiredEndTime, actualTimeOut);
-            double overtimeMinutes = overtimeDuration.toMinutes();
+            // ========================================
 
-            // Apply rounding to overtime
-            double overtimeHours = 0.0;
-            if (overtimeMinutes >= ROUNDING_THRESHOLD_MINUTES) {
-                overtimeHours = Math.ceil(overtimeMinutes / 60.0);
+            // Calculate scheduled work minutes (from effective start to required end)
+            Duration scheduledDuration = Duration.between(effectiveStartDateTime,
+                    LocalDateTime.of(timeOut.toLocalDate(), requiredEndTime));
+            long scheduledMinutes = scheduledDuration.toMinutes();
+
+            // Apply break deduction if scheduled >= 5 hours
+            boolean shouldDeductBreak = scheduledMinutes >= 300;
+            if (shouldDeductBreak) {
+                scheduledMinutes -= 60;
+                calculation.setBreakDeducted(true);
+            } else {
+                calculation.setBreakDeducted(false);
             }
 
-            // Regular hours = scheduled hours (after break deduction)
-            double regularHours = scheduledHours;
-            if (calculation.isBreakDeducted()) {
-                regularHours -= BREAK_DEDUCTION_HOURS;
-            }
+            scheduledMinutes = Math.max(0, scheduledMinutes);
 
-            // Cap regular hours at 8
+            double regularHours = Math.floor(scheduledMinutes / 60.0);
             regularHours = Math.min(regularHours, REGULAR_HOURS_CAP);
+
+            // Calculate overtime minutes (from required end to actual end)
+            Duration overtimeDuration = Duration.between(requiredEndTime, actualTimeOut);
+            long overtimeMinutes = overtimeDuration.toMinutes();
+            double overtimeHours = convertMinutesToHoursWithRounding(overtimeMinutes);
 
             calculation.setTotalHours(regularHours + overtimeHours);
             calculation.setRegularHours(regularHours);
@@ -507,12 +551,26 @@ public class AttendanceService {
             calculation.setUndertimeHours(0.0);
 
         } else {
-            // EXACTLY ON TIME: Worked exactly until required end time
-            double regularHours = scheduledHours;
-            if (calculation.isBreakDeducted()) {
-                regularHours -= BREAK_DEDUCTION_HOURS;
+            // ========================================
+            // EXACTLY ON TIME
+            // ========================================
+
+            // Calculate scheduled work minutes
+            Duration scheduledDuration = Duration.between(effectiveStartDateTime,
+                    LocalDateTime.of(timeOut.toLocalDate(), requiredEndTime));
+            long scheduledMinutes = scheduledDuration.toMinutes();
+
+            // Apply break deduction if >= 5 hours
+            if (scheduledMinutes >= 300) {
+                scheduledMinutes -= 60;
+                calculation.setBreakDeducted(true);
+            } else {
+                calculation.setBreakDeducted(false);
             }
 
+            scheduledMinutes = Math.max(0, scheduledMinutes);
+
+            double regularHours = Math.floor(scheduledMinutes / 60.0);
             regularHours = Math.min(regularHours, REGULAR_HOURS_CAP);
 
             calculation.setTotalHours(regularHours);
@@ -526,38 +584,48 @@ public class AttendanceService {
 
     private HoursCalculation calculateOriginalHours(LocalDateTime timeIn, LocalDateTime timeOut) {
         Duration duration = Duration.between(timeIn, timeOut);
-        double totalMinutes = duration.toMinutes();
-        double rawHours = totalMinutes / 60.0;
+        long totalMinutes = duration.toMinutes();
 
         HoursCalculation calculation = new HoursCalculation();
         calculation.setBreakDeducted(false);
 
-        if (rawHours >= BREAK_DEDUCTION_THRESHOLD_HOURS) {
-            rawHours -= BREAK_DEDUCTION_HOURS;
+        if (totalMinutes >= 300) {
+            totalMinutes -= 60;
             calculation.setBreakDeducted(true);
         }
 
-        double roundedHours = applyRoundingRule(rawHours);
-        calculation.setTotalHours(roundedHours);
+        double totalHours = convertMinutesToHoursWithRounding(totalMinutes);
+        calculation.setTotalHours(totalHours);
 
-        if (roundedHours >= REGULAR_HOURS_CAP) {
+        if (totalHours >= REGULAR_HOURS_CAP) {
             calculation.setRegularHours((double) REGULAR_HOURS_CAP);
-            calculation.setOvertimeHours(roundedHours - REGULAR_HOURS_CAP);
+            calculation.setOvertimeHours(totalHours - REGULAR_HOURS_CAP);
             calculation.setUndertimeHours(0.0);
         } else {
-            calculation.setRegularHours(roundedHours);
+            calculation.setRegularHours(totalHours);
             calculation.setOvertimeHours(0.0);
-            calculation.setUndertimeHours(REGULAR_HOURS_CAP - roundedHours);
+            calculation.setUndertimeHours(REGULAR_HOURS_CAP - totalHours);
         }
 
         return calculation;
+    }
+
+    private double convertMinutesToHoursWithRounding(long totalMinutes) {
+        long wholeHours = totalMinutes / 60;
+        long remainingMinutes = totalMinutes % 60;
+
+        if (remainingMinutes >= ROUNDING_THRESHOLD_MINUTES) {
+            wholeHours += 1;
+        }
+
+        return (double) wholeHours;
     }
 
     /**
      * Apply 55-minute rounding rule
      * - 55+ minutes rounds up to next hour
      * - Under 55 minutes rounds down
-     */
+
     private double applyRoundingRule(double hours) {
         int wholeHours = (int) hours;
         double minutes = (hours - wholeHours) * 60;
@@ -567,12 +635,12 @@ public class AttendanceService {
         } else {
             return wholeHours;
         }
-    }
+    }*/
 
     private LocalDateTime roundToNearestHour(LocalDateTime dateTime) {
         int minutes = dateTime.getMinute();
 
-        if (minutes <= 39) {
+        if (minutes <= 54) {
             return dateTime.withMinute(0).withSecond(0).withNano(0);
         } else {
             return dateTime.withMinute(0).withSecond(0).withNano(0).plusHours(1);
