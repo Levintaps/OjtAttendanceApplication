@@ -115,6 +115,34 @@ public class AdminAuthController {
         }
     }
 
+    @PostMapping("/reset-to-default")
+    public ResponseEntity<?> resetToDefault(@RequestBody Map<String, String> request) {
+        try {
+            String username = request.get("username");
+            String confirmationCode = request.get("confirmationCode");
+
+            if (username == null || confirmationCode == null) {
+                throw new RuntimeException("Username and confirmation code are required");
+            }
+
+            // Simple confirmation code to prevent accidental resets
+            if (!"RESETPASSWORD".equals(confirmationCode)) {
+                throw new RuntimeException("Invalid confirmation code");
+            }
+
+            adminAuthService.resetToDefaultPassword(username);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Password reset to default successfully");
+            response.put("defaultPassword", "Happy@Concentrix@2025!");
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
+        }
+    }
+
     private ErrorResponse createErrorResponse(String message) {
         return new ErrorResponse() {
             @Override

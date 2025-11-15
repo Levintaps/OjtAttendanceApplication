@@ -140,4 +140,18 @@ public class AdminAuthService {
 
         return password.toString();
     }
+
+    public void resetToDefaultPassword(String username) {
+        Optional<AdminCredentials> adminOpt = adminCredentialsRepository.findByUsername(username);
+
+        if (adminOpt.isEmpty()) {
+            throw new RuntimeException("Admin user not found");
+        }
+
+        AdminCredentials admin = adminOpt.get();
+        admin.setPasswordHash(hashPassword(DEFAULT_PASSWORD));
+        admin.setLastChanged(LocalDateTime.now());
+
+        adminCredentialsRepository.save(admin);
+    }
 }
