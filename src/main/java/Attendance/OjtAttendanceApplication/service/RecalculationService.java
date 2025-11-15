@@ -260,7 +260,7 @@ public class RecalculationService {
         AttendanceStatus status = record.getStatus();
 
         // CASE 1: Admin Corrected with explicit correction note
-        if (status == AttendanceStatus.ADMIN_CORRECTED && tasks.contains("[ADMIN CORRECTION:")) {
+        if (status == AttendanceStatus.ADMIN_CORRECTED) {
             info.type = RecordType.ADMIN_CORRECTED_SKIP;
             info.shouldSkip = true;
             info.reason = "Admin manually corrected - preserving manual values";
@@ -284,12 +284,12 @@ public class RecalculationService {
         }
 
         // CASE 4: Admin Corrected but NO explicit note (could be old format - recalculate)
-        if (status == AttendanceStatus.ADMIN_CORRECTED) {
+        /*if (status == AttendanceStatus.ADMIN_CORRECTED) {
             info.type = RecordType.ADMIN_CORRECTED_RECALC;
             info.shouldSkip = false;
             info.reason = "Admin corrected without note - recalculating for consistency";
             return info;
-        }
+        }*/
 
         // CASE 5: Regular Time-Out (standard recalculation)
         info.type = RecordType.REGULAR_TIMEOUT;
@@ -641,43 +641,103 @@ public class RecalculationService {
         LocalTime scheduledEnd = student.getScheduledEndTime();
         int gracePeriod = student.getGracePeriodMinutes() != null ? student.getGracePeriodMinutes() : 5;
 
-        // Determine EFFECTIVE start time
+        // === STEP 1: Determine EFFECTIVE start time ===
         LocalTime effectiveStartTime;
+        boolean wasEarly = false;
+        boolean wasLate = false;
+
         if (actualTimeIn.isBefore(scheduledStart)) {
-            effectiveStartTime = scheduledStart;  // Early: use scheduled
+            // EARLY ARRIVAL: Use scheduled start, NOT actual arrival
+            effectiveStartTime = scheduledStart;
+            wasEarly = true;
+            System.out.println("🔵 Early arrival: Actual=" + actualTimeIn + ", Using scheduled=" + scheduledStart);
         } else if (actualTimeIn.isAfter(scheduledStart.plusMinutes(gracePeriod))) {
-            effectiveStartTime = actualTimeIn;  // Late: use actual
+            // LATE ARRIVAL: Use actual arrival
+            effectiveStartTime = actualTimeIn;
+            wasLate = true;
+            System.out.println("🔴 Late arrival: Using actual=" + actualTimeIn);
         } else {
-            effectiveStartTime = scheduledStart;  // On-time: use scheduled
+            // ON TIME: Use scheduled start
+            effectiveStartTime = scheduledStart;
+            System.out.println("🟢 On-time arrival: Using scheduled=" + scheduledStart);
         }
 
-        boolean wasLate = actualTimeIn.isAfter(scheduledStart.plusMinutes(gracePeriod));
-
+        // === STEP 2: Calculate required end time ===
         LocalTime requiredEndTime;
         if (wasLate) {
-            long lateMinutes = Duration.between(scheduledStart.plusMinutes(gracePeriod), actualTimeIn).toMinutes();
+            // If late, must work extra to make up scheduled hours
+            long lateMinutes = Duration.between(
+                    scheduledStart.plusMinutes(gracePeriod),
+                    actualTimeIn
+            ).toMinutes();
             requiredEndTime = scheduledEnd.plusMinutes(lateMinutes);
+            System.out.println("⏰ Late by " + lateMinutes + " min, required end: " + requiredEndTime);
         } else {
+            // On-time or early: required end is scheduled end
             requiredEndTime = scheduledEnd;
+            System.out.println("⏰ Required end: " + requiredEndTime);
         }
 
+        // === STEP 3: Build effective start DateTime ===
         LocalDateTime effectiveStartDateTime = LocalDateTime.of(timeIn.toLocalDate(), effectiveStartTime);
-        if (effectiveStartTime.isAfter(actualTimeOut) && !wasLate) {
-            effectiveStartDateTime = effectiveStartDateTime.minusDays(1);
+
+        // FIX: Check if this is truly a night shift by comparing actual DateTimes, not just times
+        // A night shift means time-out is on a DIFFERENT date than time-in
+        boolean isNightShift = !timeIn.toLocalDate().equals(timeOut.toLocalDate());
+
+        if (isNightShift) {
+            // True night shift: time-out is on next day
+            System.out.println("🌙 Night shift detected (time-out on next day)");
+
+            // If effective start time is "after" time-out time (e.g., 22:00 start, 06:00 end next day)
+            // the effective start is on the SAME day as time-in, not previous
+            if (effectiveStartTime.isAfter(actualTimeOut)) {
+                // This is expected for night shifts - no adjustment needed
+                System.out.println("✓ Night shift: Start=" + effectiveStartTime + " on " + timeIn.toLocalDate() +
+                        ", End=" + actualTimeOut + " on " + timeOut.toLocalDate());
+            }
+        } else {
+            // Same-day session: Both time-in and time-out are on the same date
+            System.out.println("☀️ Same-day session detected");
         }
 
+        // === STEP 4: Calculate actual work duration from EFFECTIVE start ===
         Duration workDuration = Duration.between(effectiveStartDateTime, timeOut);
         long workMinutes = Math.max(0, workDuration.toMinutes());
 
+        System.out.println("📊 Work duration: " + workMinutes + " minutes (" + (workMinutes / 60.0) + " hours)");
+
+        // === STEP 5: Determine scenario and calculate ===
         HoursCalculation calculation = new HoursCalculation();
 
-        if (actualTimeOut.isBefore(requiredEndTime)) {
-            // UNDERTIME
-            Duration undertimeDuration = Duration.between(actualTimeOut, requiredEndTime);
+        // Build required end DateTime for comparison
+        LocalDateTime requiredEndDateTime;
+        if (isNightShift && requiredEndTime.isBefore(effectiveStartTime)) {
+            // Night shift: required end is next day
+            requiredEndDateTime = LocalDateTime.of(timeOut.toLocalDate(), requiredEndTime);
+        } else if (!isNightShift && requiredEndTime.isBefore(effectiveStartTime)) {
+            // Same day but schedule crosses midnight (e.g., 22:00-02:00 but they worked same day)
+            requiredEndDateTime = LocalDateTime.of(timeIn.toLocalDate().plusDays(1), requiredEndTime);
+        } else {
+            // Normal case: required end is on the date where we're measuring
+            requiredEndDateTime = LocalDateTime.of(
+                    isNightShift ? timeOut.toLocalDate() : timeIn.toLocalDate(),
+                    requiredEndTime
+            );
+        }
+
+        if (timeOut.isBefore(requiredEndDateTime)) {
+            // ========================================
+            // SCENARIO A: UNDERTIME (Left early)
+            // ========================================
+            System.out.println("⚠️ UNDERTIME: Left at " + timeOut + " (required: " + requiredEndDateTime + ")");
+
+            Duration undertimeDuration = Duration.between(timeOut, requiredEndDateTime);
             long undertimeMinutes = undertimeDuration.toMinutes();
 
-            if (workMinutes >= BREAK_DEDUCTION_THRESHOLD_MINUTES) {
-                workMinutes -= BREAK_DEDUCTION_MINUTES;
+            // Deduct break if worked >= 5 hours
+            if (workMinutes >= 300) {
+                workMinutes -= 60;
                 calculation.setBreakDeducted(true);
             } else {
                 calculation.setBreakDeducted(false);
@@ -685,22 +745,27 @@ public class RecalculationService {
 
             workMinutes = Math.max(0, workMinutes);
 
-            double roundedHours = convertMinutesToHoursWithRounding(workMinutes);
-            double roundedUndertime = convertMinutesToHoursWithRounding(undertimeMinutes);
+            double totalHours = convertMinutesToHoursWithRounding(workMinutes);
+            double undertimeHours = convertMinutesToHoursWithRounding(undertimeMinutes);
 
-            calculation.setTotalHours(roundedHours);
-            calculation.setRegularHours(roundedHours);
+            calculation.setTotalHours(totalHours);
+            calculation.setRegularHours(totalHours);
             calculation.setOvertimeHours(0.0);
-            calculation.setUndertimeHours(roundedUndertime);
+            calculation.setUndertimeHours(undertimeHours);
 
-        } else if (actualTimeOut.isAfter(requiredEndTime)) {
-            // OVERTIME
-            Duration scheduledDuration = Duration.between(effectiveStartDateTime,
-                    LocalDateTime.of(timeOut.toLocalDate(), requiredEndTime));
+        } else if (timeOut.isAfter(requiredEndDateTime)) {
+            // ========================================
+            // SCENARIO B: OVERTIME (Stayed late)
+            // ========================================
+            System.out.println("✅ OVERTIME: Left at " + timeOut + " (required: " + requiredEndDateTime + ")");
+
+            // Calculate scheduled hours (from effective start to required end)
+            Duration scheduledDuration = Duration.between(effectiveStartDateTime, requiredEndDateTime);
             long scheduledMinutes = scheduledDuration.toMinutes();
 
-            if (scheduledMinutes >= BREAK_DEDUCTION_THRESHOLD_MINUTES) {
-                scheduledMinutes -= BREAK_DEDUCTION_MINUTES;
+            // Deduct break from scheduled hours if >= 5 hours
+            if (scheduledMinutes >= 300) {
+                scheduledMinutes -= 60;
                 calculation.setBreakDeducted(true);
             } else {
                 calculation.setBreakDeducted(false);
@@ -709,8 +774,9 @@ public class RecalculationService {
             scheduledMinutes = Math.max(0, scheduledMinutes);
             double regularHours = Math.min(Math.floor(scheduledMinutes / 60.0), REGULAR_HOURS_CAP);
 
-            Duration overtimeDuration = Duration.between(requiredEndTime, actualTimeOut);
-            long overtimeMinutes = overtimeDuration.toMinutes();
+            // Calculate overtime (from required end to actual end)
+            Duration overtimeDuration = Duration.between(requiredEndDateTime, timeOut);
+            long overtimeMinutes = Math.max(0, overtimeDuration.toMinutes());
             double overtimeHours = convertMinutesToHoursWithRounding(overtimeMinutes);
 
             calculation.setTotalHours(regularHours + overtimeHours);
@@ -719,26 +785,32 @@ public class RecalculationService {
             calculation.setUndertimeHours(0.0);
 
         } else {
-            // EXACTLY ON TIME
-            Duration scheduledDuration = Duration.between(effectiveStartDateTime,
-                    LocalDateTime.of(timeOut.toLocalDate(), requiredEndTime));
-            long scheduledMinutes = scheduledDuration.toMinutes();
+            // ========================================
+            // SCENARIO C: EXACTLY ON TIME
+            // ========================================
+            System.out.println("✅ EXACTLY ON TIME");
 
-            if (scheduledMinutes >= BREAK_DEDUCTION_THRESHOLD_MINUTES) {
-                scheduledMinutes -= BREAK_DEDUCTION_MINUTES;
+            // Deduct break if worked >= 5 hours
+            if (workMinutes >= 300) {
+                workMinutes -= 60;
                 calculation.setBreakDeducted(true);
             } else {
                 calculation.setBreakDeducted(false);
             }
 
-            scheduledMinutes = Math.max(0, scheduledMinutes);
-            double regularHours = Math.min(Math.floor(scheduledMinutes / 60.0), REGULAR_HOURS_CAP);
+            workMinutes = Math.max(0, workMinutes);
+            double regularHours = Math.min(Math.floor(workMinutes / 60.0), REGULAR_HOURS_CAP);
 
             calculation.setTotalHours(regularHours);
             calculation.setRegularHours(regularHours);
             calculation.setOvertimeHours(0.0);
             calculation.setUndertimeHours(0.0);
         }
+
+        System.out.println("📈 Final: Total=" + calculation.getTotalHours() +
+                ", Regular=" + calculation.getRegularHours() +
+                ", OT=" + calculation.getOvertimeHours() +
+                ", UT=" + calculation.getUndertimeHours());
 
         return calculation;
     }

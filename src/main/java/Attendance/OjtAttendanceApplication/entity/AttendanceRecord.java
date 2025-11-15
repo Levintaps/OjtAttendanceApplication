@@ -55,6 +55,17 @@ public class AttendanceRecord {
     @Column(name = "work_date", nullable = false)
     private LocalDate workDate;
 
+    @Column(name = "schedule_override_approved")
+    private Boolean scheduleOverrideApproved = false;
+
+    public Boolean getScheduleOverrideApproved() {
+        return scheduleOverrideApproved;
+    }
+
+    public void setScheduleOverrideApproved(Boolean scheduleOverrideApproved) {
+        this.scheduleOverrideApproved = scheduleOverrideApproved;
+    }
+
     // Constructors
     public AttendanceRecord() {
         this.attendanceDate = LocalDate.now();
