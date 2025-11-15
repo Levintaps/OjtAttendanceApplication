@@ -9,8 +9,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import java.util.Comparator;
+
+// Add this field to the TaskService class
 
 @Service
 @Transactional
@@ -24,6 +31,8 @@ public class TaskService {
 
     @Autowired
     private StudentRepository studentRepository;
+
+    private static final Logger logger = LoggerFactory.getLogger(TaskService.class);
 
     /**
      * Add a task entry for a student's current session
@@ -173,5 +182,148 @@ public class TaskService {
                 .findByAttendanceRecordOrderByCompletedAtAsc(record);
 
         taskEntryRepository.deleteAll(tasks);
+    }
+
+    public List<TaskReportResponse> getTasksForMultipleBadges(List<String> idBadges, LocalDate date) {
+        List<TaskReportResponse> reports = new ArrayList<>();
+
+        for (String idBadge : idBadges) {
+            try {
+                Student student = studentRepository.findByIdBadge(idBadge)
+                        .orElse(null);
+
+                if (student == null) {
+                    logger.warn("Student not found with ID badge: {}", idBadge);
+                    continue;
+                }
+
+                TaskReportResponse report = buildTaskReport(student, date);
+                if (report != null) {
+                    reports.add(report);
+                }
+            } catch (Exception e) {
+                logger.error("Error retrieving tasks for badge {}: {}", idBadge, e.getMessage());
+            }
+        }
+
+        // Sort by student name
+        reports.sort(Comparator.comparing(TaskReportResponse::getStudentName));
+
+        return reports;
+    }
+
+    public List<TaskReportResponse> getTasksBySchedule(LocalTime startTime, LocalTime endTime, LocalDate date) {
+        List<Student> students = studentRepository.findAll();
+        List<TaskReportResponse> reports = new ArrayList<>();
+
+        for (Student student : students) {
+            // Check if student has matching schedule
+            if (student.hasActiveSchedule() &&
+                    student.getScheduledStartTime().equals(startTime) &&
+                    student.getScheduledEndTime().equals(endTime)) {
+
+                try {
+                    TaskReportResponse report = buildTaskReport(student, date);
+                    if (report != null) {
+                        reports.add(report);
+                    }
+                } catch (Exception e) {
+                    logger.error("Error building report for student {}: {}", student.getFullName(), e.getMessage());
+                }
+            }
+        }
+
+        // Sort by student name
+        reports.sort(Comparator.comparing(TaskReportResponse::getStudentName));
+
+        return reports;
+    }
+
+    public List<TaskReportResponse> getAllTasksForDate(LocalDate date) {
+        List<AttendanceRecord> records = attendanceRecordRepository
+                .findByWorkDateOrderByTimeInAsc(date);
+
+        List<TaskReportResponse> reports = new ArrayList<>();
+
+        for (AttendanceRecord record : records) {
+            try {
+                TaskReportResponse report = buildTaskReportFromRecord(record);
+                if (report != null) {
+                    reports.add(report);
+                }
+            } catch (Exception e) {
+                logger.error("Error building report from record {}: {}", record.getId(), e.getMessage());
+            }
+        }
+
+        return reports;
+    }
+
+    private TaskReportResponse buildTaskReport(Student student, LocalDate date) {
+        // Find attendance records for this date
+        List<AttendanceRecord> dayRecords = attendanceRecordRepository
+                .findByStudentAndWorkDate(student, date);
+
+        if (dayRecords.isEmpty()) {
+            // Student didn't work this day - return null or empty report
+            return null;
+        }
+
+        // Get the main record (first time-in of the day)
+        AttendanceRecord mainRecord = dayRecords.stream()
+                .min(Comparator.comparing(AttendanceRecord::getTimeIn))
+                .orElse(null);
+
+        if (mainRecord == null) {
+            return null;
+        }
+
+        return buildTaskReportFromRecord(mainRecord);
+    }
+
+    private TaskReportResponse buildTaskReportFromRecord(AttendanceRecord record) {
+        Student student = record.getStudent();
+
+        TaskReportResponse report = new TaskReportResponse();
+        report.setIdBadge(student.getIdBadge());
+        report.setStudentName(student.getFullName());
+        report.setSchool(student.getSchool());
+        report.setDate(record.getWorkDate());
+
+        // Schedule information
+        if (student.hasActiveSchedule()) {
+            report.setScheduledStartTime(student.getScheduledStartTime());
+            report.setScheduledEndTime(student.getScheduledEndTime());
+            report.setScheduleDisplayText(
+                    String.format("%s - %s",
+                            student.getScheduledStartTime().toString(),
+                            student.getScheduledEndTime().toString())
+            );
+        } else {
+            report.setScheduleDisplayText("No Schedule");
+        }
+
+        // Actual times
+        if (record.getTimeIn() != null) {
+            report.setActualTimeIn(record.getTimeIn().toLocalTime());
+        }
+        if (record.getTimeOut() != null) {
+            report.setActualTimeOut(record.getTimeOut().toLocalTime());
+        }
+
+        report.setTotalHours(record.getTotalHours());
+
+        // Get tasks for this record
+        List<TaskEntry> tasks = taskEntryRepository
+                .findByAttendanceRecordOrderByCompletedAtAsc(record);
+
+        List<TaskEntryDto> taskDtos = tasks.stream()
+                .map(this::convertToDto)
+                .collect(Collectors.toList());
+
+        report.setTasks(taskDtos);
+        report.setTaskCount(tasks.size());
+
+        return report;
     }
 }
