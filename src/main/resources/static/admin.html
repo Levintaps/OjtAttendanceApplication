@@ -872,6 +872,12 @@
                                 <h2>📋 Real-Time Task Monitoring</h2>
                                 <p>Track student productivity and task completion in real-time</p>
                             </div>
+                            <button class="btn btn-primary" onclick="openFullscreenTasks()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                                </svg>
+                                Fullscreen Monitor
+                            </button>
                         </div>
 
                         <div class="compact-controls">
@@ -1312,6 +1318,9 @@
                 <div class="action-buttons">
                     <button class="btn btn-warning" onclick="showChangePasswordModal()">
                         🔑 Change Password
+                    </button>
+                    <button class="btn btn-error" onclick="showResetPasswordModal()">
+                        🔄 Reset to Default Password
                     </button>
                 </div>
             </div>
@@ -2206,6 +2215,133 @@
                         <polyline points="20 6 9 17 4 12"></polyline>
                     </svg>
                     Submit Review
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Fullscreen Live Tasks Modal -->
+<div id="fullscreenTasksModal" class="fullscreen-tasks-modal">
+    <div class="fullscreen-header">
+        <div style="display: flex; align-items: center; gap: 2rem;">
+            <h2>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                Live Task Monitor - Fullscreen
+            </h2>
+
+            <div class="fullscreen-stats">
+                <div class="fullscreen-stat">
+                    <div class="fullscreen-stat-value" id="fullscreenStatActive">0</div>
+                    <div class="fullscreen-stat-label">Active</div>
+                </div>
+                <div class="fullscreen-stat">
+                    <div class="fullscreen-stat-value" id="fullscreenStatTasks">0</div>
+                    <div class="fullscreen-stat-label">Total Tasks</div>
+                </div>
+                <div class="fullscreen-stat">
+                    <div class="fullscreen-stat-value" id="fullscreenStatIdle">0</div>
+                    <div class="fullscreen-stat-label">Idle</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="fullscreen-controls">
+            <button class="fullscreen-close-btn" onclick="closeFullscreenTasks()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6 6 18M6 6l12 12"/>
+                </svg>
+                Exit Fullscreen
+            </button>
+        </div>
+    </div>
+
+    <div class="fullscreen-content">
+        <div class="fullscreen-tasks-grid" id="fullscreenTasksGrid">
+            <!-- Task cards will be rendered here -->
+        </div>
+    </div>
+</div>
+
+<!-- Reset Password Modal -->
+<div id="resetPasswordModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; color: var(--error-color);">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                Reset Admin Password
+            </h3>
+            <button class="modal-close" onclick="closeModal('resetPasswordModal')">×</button>
+        </div>
+
+        <div class="alert alert-error">
+            <strong>⚠️ CRITICAL ACTION</strong>
+            <p>This will reset the admin password to the default: <code style="background: rgba(0,0,0,0.1); padding: 0.25rem 0.5rem; border-radius: 4px;">Happy@Concentrix@2025!</code></p>
+        </div>
+
+        <div class="alert alert-warning">
+            <strong>When to use this:</strong>
+            <ul style="margin: 0.5rem 0 0 1.5rem; line-height: 1.8;">
+                <li>You've forgotten your current password</li>
+                <li>Emergency access is needed</li>
+                <li>Password has been compromised</li>
+            </ul>
+        </div>
+
+        <form id="resetPasswordForm" onsubmit="submitResetPassword(event)">
+            <div class="form-group">
+                <label for="resetUsername">Admin Username:</label>
+                <input type="text"
+                       id="resetUsername"
+                       value="admin"
+                       readonly
+                       style="background: var(--bg-secondary);">
+            </div>
+
+            <div class="form-group">
+                <label for="resetConfirmationCode">
+                    Confirmation Code:
+                    <span style="color: var(--error-color);">*</span>
+                </label>
+                <input type="text"
+                       id="resetConfirmationCode"
+                       placeholder="Type: RESETPASSWORD"
+                       required
+                       style="font-family: monospace; letter-spacing: 0.05em;">
+                <small>Type <strong>RESETPASSWORD</strong> exactly to confirm (case-sensitive)</small>
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="confirmReset" required style="width: auto; margin-right: 0.5rem;">
+                    I understand this will reset my password to the default
+                </label>
+            </div>
+
+            <div class="alert alert-info">
+                <strong>📝 After Reset:</strong>
+                <ol style="margin: 0.5rem 0 0 1.5rem; line-height: 1.8;">
+                    <li>Your password will be: <code style="background: rgba(0,0,0,0.1); padding: 0.25rem 0.5rem; border-radius: 4px;">Happy@Concentrix@2025!</code></li>
+                    <li>You'll need to log in again with this password</li>
+                    <li>Change it immediately after logging in for security</li>
+                </ol>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('resetPasswordModal')">
+                    Cancel
+                </button>
+                <button type="submit" class="btn btn-error">
+                    🔄 Reset to Default Password
                 </button>
             </div>
         </form>

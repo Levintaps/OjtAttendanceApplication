@@ -4059,7 +4059,6 @@ async function loadLiveTaskUpdates(silent = false) {
     if (!silent) showLoading();
 
     try {
-        // ✅ FIX: Get ALL currently active sessions (regardless of date)
         const recordsResponse = await fetch(`${API_BASE_URL}/admin/attendance/active-sessions`);
         if (!recordsResponse.ok) throw new Error('Failed to fetch active sessions');
 
@@ -4087,6 +4086,9 @@ async function loadLiveTaskUpdates(silent = false) {
         calculateProductivityStats();
         displayLiveTaskCards();
 
+        // Also refresh fullscreen if open
+        refreshFullscreenTasks();
+
         lastTaskUpdateTime = new Date();
         updateLastRefreshTime();
 
@@ -4103,6 +4105,7 @@ async function loadLiveTaskUpdates(silent = false) {
         if (!silent) hideLoading();
     }
 }
+
 
 function calculateProductivityStats() {
     const stats = {
@@ -4340,32 +4343,42 @@ function createTaskCard(student, productivity) {
 
 // Toggle task card expand/collapse
 function toggleTaskCard(recordId, event) {
-    // Stop event propagation first
+    // Stop ALL propagation
     if (event) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
     }
 
-    // Get ONLY the specific card by its unique record ID
-    const targetCard = document.querySelector(`.task-card[data-record-id="${recordId}"]`);
+    console.log('🔍 Toggling card for record ID:', recordId);
 
-    if (!targetCard) {
-        console.error('❌ Card not found for record ID:', recordId);
+    // Find ALL cards with this record ID (could be in normal view AND fullscreen)
+    const allCards = document.querySelectorAll(`.task-card[data-record-id="${recordId}"]`);
+
+    console.log('📦 Found cards:', allCards.length);
+
+    if (allCards.length === 0) {
+        console.error('❌ No cards found for record ID:', recordId);
         return;
     }
 
-    // Check current state
-    const isCurrentlyCollapsed = targetCard.classList.contains('collapsed');
+    // Toggle each instance of the card (normal view + fullscreen)
+    allCards.forEach(card => {
+        const isCurrentlyExpanded = card.classList.contains('expanded');
 
-    // Toggle ONLY this specific card
-    if (isCurrentlyCollapsed) {
-        targetCard.classList.remove('collapsed');
-        targetCard.classList.add('expanded');
-    } else {
-        targetCard.classList.remove('expanded');
-        targetCard.classList.add('collapsed');
-    }
+        if (isCurrentlyExpanded) {
+            card.classList.remove('expanded');
+            card.classList.add('collapsed');
+            console.log('⬆️ Collapsed card:', recordId);
+        } else {
+            card.classList.add('expanded');
+            card.classList.remove('collapsed');
+            console.log('⬇️ Expanded card:', recordId);
+        }
+
+        // Force reflow to ensure styles are applied
+        void card.offsetHeight;
+    });
 }
 
 // Expand all cards
@@ -4375,7 +4388,7 @@ function expandAllTaskCards() {
         card.classList.remove('collapsed');
         card.classList.add('expanded');
     });
-    showAlert(`Expanded ${cards.length} cards`, 'info');
+    showAlert(`Expanded all cards`, 'info');
 }
 
 // Collapse all cards
@@ -4385,7 +4398,7 @@ function collapseAllTaskCards() {
         card.classList.add('collapsed');
         card.classList.remove('expanded');
     });
-    showAlert(`Collapsed ${cards.length} cards`, 'info');
+    showAlert(`Collapsed all cards`, 'info');
 }
 
 // Show all tasks in modal
@@ -5711,6 +5724,13 @@ async function submitOverrideReview(event) {
 
     const submitBtn = event.target.querySelector('button[type="submit"]');
     const originalText = submitBtn.innerHTML;
+
+    // 🔥 FIX: Check if button is already disabled (prevent double submission)
+    if (submitBtn.disabled) {
+        console.log('⚠️ Button already processing, ignoring duplicate click');
+        return;
+    }
+
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<div class="spinner" style="width: 16px; height: 16px; margin: 0 auto;"></div> Processing...';
 
@@ -5722,7 +5742,7 @@ async function submitOverrideReview(event) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 action: action,
-                adminUsername: 'admin', // You can get this from session if you have user management
+                adminUsername: 'admin',
                 adminResponse: adminResponse || null
             })
         });
@@ -5731,6 +5751,15 @@ async function submitOverrideReview(event) {
             const result = await response.json();
 
             hideLoading();
+
+            // 🔥 FIX: Re-enable button BEFORE closing modal
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+
+            // Clear the form
+            document.getElementById('overrideAdminResponse').value = '';
+
+            // Close modal
             closeModal('overrideReviewModal');
 
             showAlert(
@@ -5740,11 +5769,11 @@ async function submitOverrideReview(event) {
                 action === 'APPROVE' ? 'success' : 'info'
             );
 
-            // Reload requests and notifications
-            await Promise.all([
+            // Reload requests and notifications in background
+            Promise.all([
                 loadScheduleOverrideRequests(),
                 loadNotifications()
-            ]);
+            ]).catch(err => console.error('Failed to reload data:', err));
 
         } else {
             const errorData = await response.json();
@@ -5755,9 +5784,38 @@ async function submitOverrideReview(event) {
         console.error('Review submission error:', error);
         showAlert(error.message || 'Failed to process schedule override request', 'error');
 
-        // Re-enable button
+        // Always re-enable button on error
         submitBtn.disabled = false;
         submitBtn.innerHTML = originalText;
+    }
+}
+
+function resetOverrideReviewModal() {
+    const form = document.getElementById('overrideReviewForm');
+    if (form) {
+        form.reset();
+
+        // Re-enable submit button
+        const submitBtn = form.querySelector('button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            const action = document.getElementById('overrideReviewModal').dataset.action;
+            if (action === 'APPROVE') {
+                submitBtn.innerHTML = `
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    Submit Review
+                `;
+            } else {
+                submitBtn.innerHTML = `
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    Submit Review
+                `;
+            }
+        }
     }
 }
 
@@ -5948,6 +6006,11 @@ function showModal(modalId) {
 function closeModal(modalId) {
     document.getElementById(modalId).classList.remove('show');
     document.body.style.overflow = '';
+
+    // Reset override review modal when closing
+    if (modalId === 'overrideReviewModal') {
+        setTimeout(() => resetOverrideReviewModal(), 300); // Wait for modal close animation
+    }
 }
 
 function downloadFile(blob, filename) {
@@ -6101,4 +6164,248 @@ function startPeriodicRefresh() {
     }, 120000);
 }
 
-console.log('✅ TERA IT Admin Panel - Clean Version Loaded Successfully');
+function openFullscreenTasks() {
+    const modal = document.getElementById('fullscreenTasksModal');
+    modal.classList.add('show');
+    document.body.style.overflow = 'hidden';
+
+    // Render tasks in fullscreen grid
+    renderFullscreenTasks();
+
+    // Update stats
+    updateFullscreenStats();
+}
+
+function closeFullscreenTasks() {
+    const modal = document.getElementById('fullscreenTasksModal');
+    modal.classList.remove('show');
+    document.body.style.overflow = '';
+}
+
+function renderFullscreenTasks() {
+    const container = document.getElementById('fullscreenTasksGrid');
+
+    if (liveTaskData.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state-modern" style="grid-column: 1 / -1;">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <h3>📋 No active students currently</h3>
+                <p>Students will appear here when they time in</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Sort and render task cards
+    const sortedData = sortLiveTaskData();
+    container.innerHTML = sortedData.map(student => {
+        const productivity = calculateProductivity(student);
+        return createTaskCard(student, productivity);
+    }).join('');
+}
+
+function updateFullscreenStats() {
+    document.getElementById('fullscreenStatActive').textContent = liveTaskData.length;
+
+    const totalTasks = liveTaskData.reduce((sum, student) => sum + student.taskCount, 0);
+    document.getElementById('fullscreenStatTasks').textContent = totalTasks;
+
+    const idleCount = liveTaskData.filter(student => {
+        const now = new Date();
+        const timeInDate = new Date(student.record.timeIn);
+        const hoursWorked = (now - timeInDate) / (1000 * 60 * 60);
+        return student.taskCount === 0 && hoursWorked >= 1;
+    }).length;
+    document.getElementById('fullscreenStatIdle').textContent = idleCount;
+}
+
+function refreshFullscreenTasks() {
+    const modal = document.getElementById('fullscreenTasksModal');
+    if (modal.classList.contains('show')) {
+        renderFullscreenTasks();
+        updateFullscreenStats();
+    }
+}
+
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        const fullscreenModal = document.getElementById('fullscreenTasksModal');
+        if (fullscreenModal && fullscreenModal.classList.contains('show')) {
+            closeFullscreenTasks();
+        }
+    }
+
+    // F11 or Ctrl+F for fullscreen (from Live Tasks tab)
+    if ((event.key === 'F11' || (event.ctrlKey && event.key === 'f' && event.altKey)) && currentTab === 'liveTasks') {
+        event.preventDefault();
+        openFullscreenTasks();
+    }
+});
+
+// ==================== PASSWORD RESET ====================
+
+/**
+ * Show Reset Password Modal
+ */
+function showResetPasswordModal() {
+    // Clear previous inputs
+    document.getElementById('resetPasswordForm').reset();
+    document.getElementById('resetConfirmationCode').value = '';
+    document.getElementById('confirmReset').checked = false;
+
+    showModal('resetPasswordModal');
+}
+
+/**
+ * Submit Password Reset
+ */
+async function submitResetPassword(event) {
+    event.preventDefault();
+
+    const username = document.getElementById('resetUsername').value;
+    const confirmationCode = document.getElementById('resetConfirmationCode').value;
+    const confirmed = document.getElementById('confirmReset').checked;
+
+    // Validation
+    if (!confirmed) {
+        showAlert('Please confirm that you understand this action', 'error');
+        return;
+    }
+
+    if (confirmationCode !== 'RESETPASSWORD') {
+        showAlert('❌ Incorrect confirmation code. Please type exactly: RESETPASSWORD', 'error');
+        return;
+    }
+
+    // Disable submit button
+    const submitBtn = event.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<div class="spinner" style="width: 16px; height: 16px; margin: 0 auto;"></div> Resetting...';
+
+    showLoading();
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin/auth/reset-to-default`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: username,
+                confirmationCode: confirmationCode
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Password reset failed');
+        }
+
+        const result = await response.json();
+
+        hideLoading();
+        closeModal('resetPasswordModal');
+
+        // Show success modal with instructions
+        showResetPasswordSuccess(result.defaultPassword);
+
+    } catch (error) {
+        hideLoading();
+        console.error('Reset password error:', error);
+        showAlert(error.message || 'Failed to reset password. Please try again.', 'error');
+
+        // Re-enable button
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+    }
+}
+
+/**
+ * Show Reset Password Success Modal
+ */
+function showResetPasswordSuccess(defaultPassword) {
+    const modal = document.getElementById('changePasswordModal'); // Reuse existing modal
+    const content = modal.querySelector('form').parentElement;
+
+    // Temporarily replace content
+    const originalContent = content.innerHTML;
+
+    content.innerHTML = `
+        <div class="result-card success">
+            <div class="result-icon">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+            </div>
+            <h3>✅ Password Reset Successfully!</h3>
+            <p>Your admin password has been reset to the default</p>
+
+            <div class="result-details">
+                <div class="result-detail-item">
+                    <span class="result-label">New Password:</span>
+                    <span class="result-value" style="font-family: monospace; background: rgba(0,0,0,0.05); padding: 0.5rem; border-radius: 6px; display: block; margin-top: 0.5rem;">
+                        ${defaultPassword}
+                    </span>
+                </div>
+            </div>
+
+            <div class="alert alert-warning" style="margin-top: 1.5rem; text-align: left;">
+                <strong>⚠️ Important Next Steps:</strong>
+                <ol style="margin: 0.5rem 0 0 1.5rem; line-height: 1.8;">
+                    <li>Copy this password immediately</li>
+                    <li>Log out and log back in with this password</li>
+                    <li>Change your password to a secure one</li>
+                    <li>Never share this password with anyone</li>
+                </ol>
+            </div>
+
+            <div class="result-footer" style="margin-top: 1.5rem;">
+                <button class="btn btn-secondary" onclick="copyPasswordToClipboard('${defaultPassword}')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    Copy Password
+                </button>
+                <button class="btn btn-primary" onclick="logoutAndRedirect()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                        <polyline points="16 17 21 12 16 7"></polyline>
+                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                    </svg>
+                    Log Out Now
+                </button>
+            </div>
+        </div>
+    `;
+
+    showModal('changePasswordModal');
+}
+
+/**
+ * Copy Password to Clipboard
+ */
+function copyPasswordToClipboard(password) {
+    navigator.clipboard.writeText(password).then(() => {
+        showAlert('✅ Password copied to clipboard!', 'success');
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        showAlert('Failed to copy password. Please copy it manually.', 'error');
+    });
+}
+
+/**
+ * Logout and Redirect
+ */
+function logoutAndRedirect() {
+    showAlert('Logging out...', 'info');
+    setTimeout(() => {
+        window.location.href = 'index.html';
+    }, 1000);
+}
+
+console.log('TERA IT Admin Panel - Loaded Successfully');

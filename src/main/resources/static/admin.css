@@ -3788,8 +3788,8 @@ button:disabled {
     flex-direction: column;
     animation: fadeIn 0.3s ease-out;
     position: relative;
-    isolation: isolate; /* Create new stacking context */
-    contain: layout style; /* Optimize rendering */
+    isolation: isolate;
+    contain: layout;
 }
 
 .task-card.collapsed {
@@ -3820,23 +3820,52 @@ button:disabled {
     -ms-user-select: none;
 }
 
-.task-card.collapsed .task-card-body,
-.task-card.collapsed .task-card-footer {
+.task-card .task-card-body,
+.task-card .task-card-footer {
     display: none !important;
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: all 0.3s ease;
 }
 
 .task-card.expanded .task-card-body {
     display: flex !important;
+    flex-direction: column;
+    opacity: 1;
+    max-height: 5000px;
+    animation: slideDown 0.3s ease-out;
 }
 
 .task-card.expanded .task-card-footer {
     display: flex !important;
+    opacity: 1;
+    max-height: 100px;
+    animation: slideDown 0.3s ease-out;
 }
 
-/* Fix: Prevent sibling selector issues */
-.task-card:not(.expanded) ~ .task-card .task-card-body,
-.task-card:not(.expanded) ~ .task-card .task-card-footer {
-    /* Do nothing - prevent cascade */
+.task-cards-grid .task-card.collapsed .task-card-body,
+.fullscreen-tasks-grid .task-card.collapsed .task-card-body,
+.task-cards-grid .task-card.collapsed .task-card-footer,
+.fullscreen-tasks-grid .task-card.collapsed .task-card-footer {
+    display: none !important;
+    opacity: 0;
+    max-height: 0;
+}
+
+.task-cards-grid .task-card.expanded .task-card-body,
+.fullscreen-tasks-grid .task-card.expanded .task-card-body {
+    display: flex !important;
+    flex-direction: column;
+    opacity: 1;
+    max-height: 5000px;
+}
+
+.task-cards-grid .task-card.expanded .task-card-footer,
+.fullscreen-tasks-grid .task-card.expanded .task-card-footer {
+    display: flex !important;
+    opacity: 1;
+    max-height: 100px;
 }
 
 .task-card-header::before {
@@ -3889,6 +3918,10 @@ button:disabled {
 
 .task-card.expanded .expand-icon {
     transform: rotate(180deg);
+}
+
+.task-card.collapsed .expand-icon {
+    transform: rotate(0deg);
 }
 
 .productivity-badge {
@@ -4940,4 +4973,159 @@ textarea,
     border-radius: 6px;
     font-size: 0.9rem;
     line-height: 1.5;
+}
+
+/* ==================== FULLSCREEN LIVE TASKS MODAL ==================== */
+.fullscreen-tasks-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg-secondary);
+    z-index: 10000;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.fullscreen-tasks-modal.show {
+    display: flex;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.fullscreen-header {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    color: white;
+    padding: 1.5rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    flex-shrink: 0;
+}
+
+.fullscreen-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.fullscreen-controls {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.fullscreen-stats {
+    display: flex;
+    gap: 2rem;
+    padding: 0 2rem;
+}
+
+.fullscreen-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.fullscreen-stat-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: white;
+}
+
+.fullscreen-stat-label {
+    font-size: 0.75rem;
+    opacity: 0.9;
+}
+
+.fullscreen-close-btn {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    padding: 0.75rem 1.5rem;
+    border-radius: var(--border-radius-lg);
+    cursor: pointer;
+    transition: var(--transition-normal);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.fullscreen-close-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-2px);
+}
+
+.fullscreen-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 2rem;
+}
+
+.fullscreen-tasks-grid {
+    display: grid;
+    gap: 1.5rem;
+    margin: 0 auto;
+    max-width: 100%;
+}
+
+@media (max-width: 768px) {
+    .fullscreen-tasks-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1200px) {
+    .fullscreen-tasks-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 1201px) and (max-width: 1600px) {
+    .fullscreen-tasks-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (min-width: 1601px) and (max-width: 2000px) {
+    .fullscreen-tasks-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+@media (min-width: 2001px) {
+    .fullscreen-tasks-grid {
+        grid-template-columns: repeat(5, 1fr);
+    }
+
+    /* Fullscreen task card adjustments */
+    .fullscreen-tasks-grid .task-card {
+        margin: 0;
+        height: fit-content;
+    }
+
+    /* Fix scrollbar for fullscreen modal */
+    .fullscreen-content::-webkit-scrollbar {
+        width: 10px;
+    }
+
+    .fullscreen-content::-webkit-scrollbar-track {
+        background: var(--bg-tertiary);
+    }
+
+    .fullscreen-content::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 5px;
+    }
+
+    .fullscreen-content::-webkit-scrollbar-thumb:hover {
+        background: var(--text-muted);
+    }
 }

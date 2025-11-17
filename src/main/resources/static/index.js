@@ -835,7 +835,7 @@ async function submitWithTotp(event) {
     const totpCode = document.getElementById('totpActionCode').value.trim();
     const modal = document.getElementById('totpVerifyModal');
     const action = modal.dataset.action;
-    const tasksCompleted = document.getElementById('totpTasksData').value || '';
+    const additionalTasks = document.getElementById('totpTasksData').value || '';
 
     if (totpCode.length !== 6) {
         showAlert('Please enter a valid 6-digit code', 'error');
@@ -847,13 +847,63 @@ async function submitWithTotp(event) {
     setActionCooldown();
 
     try {
+        // FIRST: If this is a time-out AND there are additional tasks, submit them BEFORE timing out
+        if (action === 'TIME_OUT' && additionalTasks.trim().length > 0) {
+            console.log('Submitting additional tasks before time-out...');
+
+            // Split by newlines to handle multiple tasks
+            const taskLines = additionalTasks.split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length >= 5);
+
+            if (taskLines.length > 0) {
+                const now = new Date();
+                const completedAt = now.getFullYear() + '-' +
+                                    String(now.getMonth() + 1).padStart(2, '0') + '-' +
+                                    String(now.getDate()).padStart(2, '0') + 'T' +
+                                    String(now.getHours()).padStart(2, '0') + ':' +
+                                    String(now.getMinutes()).padStart(2, '0') + ':' +
+                                    String(now.getSeconds()).padStart(2, '0');
+
+                // Submit each additional task
+                for (const task of taskLines) {
+                    const requestBody = {
+                        idBadge: idBadge,
+                        taskDescription: task,
+                        completedAt: completedAt,
+                        addedDuringTimeout: true  // Mark as added during timeout
+                    };
+
+                    try {
+                        const taskResponse = await fetch(`${API_BASE_URL}/tasks/add`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(requestBody)
+                        });
+
+                        if (taskResponse.ok) {
+                            console.log('✓ Additional task saved:', task);
+                        } else {
+                            console.error('✗ Failed to save task:', task);
+                        }
+                    } catch (error) {
+                        console.error('Error submitting task:', error);
+                    }
+                }
+
+                // Small delay to ensure tasks are saved
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        }
+
+        // SECOND: Now perform the actual time-in or time-out
         const response = await fetch(`${API_BASE_URL}/attendance/log-with-totp`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 idBadge: idBadge,
                 totpCode: totpCode,
-                tasksCompleted: tasksCompleted
+                tasksCompleted: '' // Don't pass tasks here, they're already saved above
             })
         });
 
@@ -866,9 +916,9 @@ async function submitWithTotp(event) {
                 handleSuccessfulTimeOut(data);
             }
         } else {
-            showAlert(data.message || 'Invalid TOPT, Please try again!', 'error');
+            showAlert(data.message || 'Invalid TOTP, Please try again!', 'error');
             if (data.message && data.message.includes('Invalid TOTP')) {
-                setTimeout(() => showTotpVerificationModal(action, tasksCompleted), 1000);
+                setTimeout(() => showTotpVerificationModal(action, additionalTasks), 1000);
             }
         }
 
@@ -1597,12 +1647,8 @@ function displayAttendanceHistory(history) {
 
             let hoursDisplay;
             if (!record.timeOut && currentTimeInTimestamp) {
-                const now = new Date();
-                const diffMs = now - currentTimeInTimestamp;
-                const hours = Math.floor(diffMs / (1000 * 60 * 60));
-                const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-                const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
-                hoursDisplay = `<strong>${hours}h ${minutes}m ${seconds}s</strong>`;
+                // This will be updated by updateTodayHours() function
+                hoursDisplay = `<strong>0h 0m 0s</strong>`;
             } else {
                 hoursDisplay = `<strong>${record.totalHours || '0.0'}h</strong>`;
             }
@@ -1758,7 +1804,7 @@ function closeAllModals() {
     pendingTimeOut = false;
 }
 
-// FIXED: Task Summary Modal - Shows tasks review before TOTP
+// Task Summary Modal - Shows tasks review before TOTP
 function showTaskSummaryModal(tasks) {
     const modal = elements.taskModal();
     const modalHeader = modal.querySelector('.modal-header h3');
@@ -1795,7 +1841,7 @@ function showTaskSummaryModal(tasks) {
     document.body.style.overflow = 'hidden';
 }
 
-// FIXED: Enhanced Time Out - Shows TOTP after task review
+// Time Out - Shows TOTP after task review
 async function submitEnhancedTimeOut() {
     const additionalTasks = document.getElementById('additionalTasks')?.value.trim() || '';
 
@@ -1990,23 +2036,101 @@ function stopTodayHoursTimer() {
     currentTimeInTimestamp = null;
 }
 
-function updateTodayHours() {
+async function updateTodayHours() {
     if (!currentTimeInTimestamp) return;
 
     const now = new Date();
-    const diffMs = now - currentTimeInTimestamp;
+    const idBadge = elements.idBadge().value.trim();
 
-    const hours = Math.floor(diffMs / (1000 * 60 * 60));
-    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+    let shouldShowOnHold = false;
+    let effectiveStartTime = null;
 
-    const timeString = `${hours}h ${minutes}m ${seconds}s`;
+    if (idBadge && isValidIdBadge(idBadge)) {
+        try {
+            // Get student's schedule
+            const studentsResponse = await fetch(`${API_BASE_URL}/students/all`);
+            if (studentsResponse.ok) {
+                const allStudents = await studentsResponse.json();
+                const currentStudent = allStudents.find(s => s.idBadge === idBadge);
 
+                if (currentStudent && currentStudent.scheduleActive) {
+                    // Check for approved override for THIS session
+                    const overrideResponse = await fetch(`${API_BASE_URL}/schedule-override/my-requests/${idBadge}`);
+                    let hasApprovedOverride = false;
+
+                    if (overrideResponse.ok) {
+                        const overrideData = await overrideResponse.json();
+                        if (overrideData.success && overrideData.requests) {
+                            // Check if there's an approved request for TODAY
+                            const todayStr = new Date().toDateString();
+                            const approvedRequest = overrideData.requests.find(req => {
+                                const reqDate = new Date(req.requestedAt).toDateString();
+                                return req.status === 'APPROVED' && reqDate === todayStr;
+                            });
+                            hasApprovedOverride = !!approvedRequest;
+                        }
+                    }
+
+                    if (!hasApprovedOverride) {
+                        // No override - enforce schedule
+                        const scheduledStart = currentStudent.scheduledStartTime;
+                        const [schedHours, schedMinutes] = scheduledStart.split(':').map(Number);
+
+                        // Create today's scheduled start time
+                        const todayScheduled = new Date();
+                        todayScheduled.setHours(schedHours, schedMinutes, 0, 0);
+
+                        if (now < todayScheduled) {
+                            // Current time is before schedule - ON HOLD
+                            shouldShowOnHold = true;
+                        } else {
+                            // Current time is after schedule - count from scheduled time
+                            effectiveStartTime = todayScheduled;
+                        }
+                    } else {
+                        // Has approved override - count from actual time in
+                        effectiveStartTime = currentTimeInTimestamp;
+                    }
+                } else {
+                    // No schedule active - count from actual time in
+                    effectiveStartTime = currentTimeInTimestamp;
+                }
+            } else {
+                // Can't fetch students - count from actual time in
+                effectiveStartTime = currentTimeInTimestamp;
+            }
+        } catch (error) {
+            console.error('Error checking schedule for timer:', error);
+            // On error - count from actual time in
+            effectiveStartTime = currentTimeInTimestamp;
+        }
+    } else {
+        // No valid badge - count from actual time in
+        effectiveStartTime = currentTimeInTimestamp;
+    }
+
+    // Update the display
     const historyBody = document.getElementById('historyBody');
     if (historyBody) {
         const activeRow = historyBody.querySelector('tr:first-child td:nth-child(3)');
-        if (activeRow && activeRow.innerHTML.includes('0h')) {
-            activeRow.innerHTML = `<strong>${timeString}</strong>`;
+        if (activeRow) {
+            if (shouldShowOnHold) {
+                activeRow.innerHTML = `<strong style="color: #f59e0b;">⏸️ On Hold</strong>`;
+            } else if (effectiveStartTime) {
+                const diffMs = now - effectiveStartTime;
+
+                if (diffMs < 0) {
+                    // This shouldn't happen, but just in case
+                    activeRow.innerHTML = `<strong style="color: #f59e0b;">⏸️ On Hold</strong>`;
+                } else {
+                    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+                    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+
+                    const timeString = `${hours}h ${minutes}m ${seconds}s`;
+                    activeRow.innerHTML = `<strong>${timeString}</strong>`;
+                }
+            }
         }
     }
 }
@@ -2122,7 +2246,7 @@ async function showWeeklyReportOptions() {
             throw new Error('Student not found');
         }
 
-        // FIXED: Use first attendance date if OJT start date not set
+        // Use first attendance date if OJT start date not set
         let ojtStartDate;
         if (currentStudent.ojtStartDate) {
             ojtStartDate = new Date(currentStudent.ojtStartDate);

@@ -7,7 +7,219 @@ let currentContext = {
     lastLiveTasksData: null
 };
 
+// Random tutorial tips that appear periodically
+const randomTutorials = [
+    {
+        icon: "💡",
+        text: "Did you know? You can ask 'Show my tasks today' to see all your completed tasks!",
+        action: "Show my tasks today"
+    },
+    {
+        icon: "🎯",
+        text: "Pro tip: Type 'tasks yesterday' to review what you accomplished yesterday!",
+        action: "My tasks yesterday"
+    },
+    {
+        icon: "📋",
+        text: "Quick command: 'Get tasks for badge 9455 today' to check any student's tasks!",
+        action: "Get tasks for badge 9455 today"
+    },
+    {
+        icon: "⚡",
+        text: "Time saver: Ask 'Who is working now?' to see all active students instantly!",
+        action: "Who is working now?"
+    },
+    {
+        icon: "📊",
+        text: "Try asking: 'Show productivity report' to see real-time student activity!",
+        action: "Show productivity report"
+    },
+    {
+        icon: "📊",
+        text: "Need historical data? Type 'tasks for [date]' like 'tasks for 2025-01-15'!",
+        action: "Tasks for 2025-01-15"
+    },
+    {
+        icon: "🎨",
+        text: "Tip: Use 'my tasks last week' to get a summary of your weekly progress!",
+        action: "My tasks last week"
+    },
+    {
+        icon: "💬",
+        text: "Chat with me! I can help with registration, schedules, and IT task guides!",
+        action: "Help"
+    },
+    {
+        icon: "🏆",
+        text: "Fun fact: Type 'self destruct' for a surprise animation! (Don't worry, it's safe!)",
+        action: "self destruct"
+    },
+    {
+        icon: "🌟",
+        text: "Ask me 'where is Amazon?' to find any production room location!",
+        action: "Where is Amazon?"
+    }
+];
+
+let tutorialInterval = null;
+let currentTutorialCloud = null;
+
+// Start showing random tutorials
+function startRandomTutorials() {
+    // Show first tutorial after 30 seconds
+    tutorialInterval = setTimeout(() => {
+        showRandomTutorialCloud();
+        // Then show every 3 minutes
+        tutorialInterval = setInterval(showRandomTutorialCloud, 180000);
+    }, 30000);
+}
+
+function showRandomTutorialCloud() {
+    // Don't show if chat is open
+    const chatBox = document.getElementById('chatBox');
+    if (chatBox && chatBox.classList.contains('open')) {
+        return;
+    }
+
+    // Don't show if there's already a cloud visible
+    if (currentTutorialCloud) {
+        return;
+    }
+
+    const randomTip = randomTutorials[Math.floor(Math.random() * randomTutorials.length)];
+
+    // Create tutorial cloud element
+    const cloud = document.createElement('div');
+    cloud.className = 'tutorial-cloud';
+    cloud.innerHTML = `
+        <div class="tutorial-cloud-header">
+            <span class="tutorial-cloud-icon">${randomTip.icon}</span>
+            <span class="tutorial-cloud-title">Quick Tip</span>
+        </div>
+        <div class="tutorial-cloud-content">${randomTip.text}</div>
+        <div class="tutorial-cloud-actions">
+            <button class="tutorial-cloud-btn tutorial-cloud-dismiss" onclick="dismissTutorialCloud()">
+                Got it
+            </button>
+            <button class="tutorial-cloud-btn tutorial-cloud-try" onclick="tryTutorialAction('${randomTip.action.replace(/'/g, "\\'")}')">
+                Try it! →
+            </button>
+        </div>
+    `;
+
+    // Append to chat widget
+    const chatWidget = document.querySelector('.chat-widget');
+    chatWidget.appendChild(cloud);
+
+    // Trigger animation
+    setTimeout(() => {
+        cloud.classList.add('show');
+    }, 100);
+
+    currentTutorialCloud = cloud;
+
+    // Auto-dismiss after 15 seconds
+    setTimeout(() => {
+        dismissTutorialCloud();
+    }, 15000);
+}
+
+function dismissTutorialCloud() {
+    if (!currentTutorialCloud) return;
+
+    currentTutorialCloud.classList.remove('show');
+
+    setTimeout(() => {
+        if (currentTutorialCloud && currentTutorialCloud.parentNode) {
+            currentTutorialCloud.parentNode.removeChild(currentTutorialCloud);
+        }
+        currentTutorialCloud = null;
+    }, 400);
+}
+
+function tryTutorialAction(action) {
+    // Dismiss the cloud
+    dismissTutorialCloud();
+
+    // Open chat if not open
+    const chatBox = document.getElementById('chatBox');
+    if (!chatBox.classList.contains('open')) {
+        toggleChat();
+    }
+
+    // Wait a bit for chat to open, then send the action
+    setTimeout(() => {
+        document.getElementById('chatInput').value = action;
+        sendMessage();
+    }, 300);
+}
+
+function stopRandomTutorials() {
+    if (tutorialInterval) {
+        clearTimeout(tutorialInterval);
+        clearInterval(tutorialInterval);
+        tutorialInterval = null;
+    }
+
+    // Also dismiss any visible cloud
+    dismissTutorialCloud();
+}
+
 const chatKnowledgeBase = {
+    // ==================== GREETINGS & IDENTITY ====================
+    greetings: {
+        keywords: ['hello', 'hi', 'hey', 'hola', 'good morning', 'good afternoon', 'good evening', 'greetings', 'sup', 'yo', 'whats up', "what's up", 'howdy', 'hiya'],
+        response: `Hello! 👋 Welcome!\n\nI'm your Intern Assistant, here to help you navigate the attendance system and answer your questions!\n\n💡 Quick commands you can try:\n• "Who is working now?"\n• "Show my tasks today"\n• "Help" - See everything I can do!\n\nWhat would you like to know?`
+    },
+
+    identity: {
+        keywords: ['who are you', 'what are you', 'tell me about yourself', 'your name', 'introduce yourself', 'about you', 'who created you', 'what is your purpose', 'who made you'],
+        response: `🤖 About Me:\n\nI am the Intern Assistant, your friendly AI chatbot!\n\n👨‍💻 Created by: Jayson Levin Tapia\n🎯 Purpose: To help OJT students and admins with the attendance system\n\n📚 My Knowledge:\nI specialize in:\n• System guides and tutorials\n• Real-time student monitoring\n• Task tracking and reports\n• IT procedures and locations\n• Team information\n\n⚠️ Important: My knowledge is limited to this attendance system and Concentrix Tera Tower operations. I cannot answer questions outside of this area.\n\n💬 Ask me anything about the system - I'm here to help!`
+    },
+
+    timeDate: {
+        keywords: ['what time', 'current time', 'time now', 'what date', 'today date', 'date today', 'what day', 'day today', 'time and date', 'whats the time', "what's the time", 'tell me the time'],
+        response: 'TIME_DATE_QUERY',
+        isSpecial: true
+    },
+
+    goodbye: {
+        keywords: ['bye', 'goodbye', 'see you', 'quit', 'exit', 'close', 'later', 'farewell', 'see ya', 'peace out', 'im out', "i'm out", 'gtg', 'gotta go', 'take care'],
+        response: 'GHOST_GOODBYE',
+        isSpecial: true
+    },
+
+    // ==================== SIMPLE QUESTIONS ====================
+    thanks: {
+        keywords: ['thank you', 'thanks', 'thank', 'thx', 'appreciate', 'appreciate it', 'much appreciated', 'thanks a lot'],
+        response: `You're welcome! 😊\n\nI'm glad I could help!\n\nIf you have any more questions, feel free to ask anytime. That's what I'm here for! 💪`
+    },
+
+    howAreYou: {
+        keywords: ['how are you', 'how r u', 'hows it going', 'whats up', 'how do you do', 'how you doing', 'you ok', 'you good'],
+        response: `I'm doing great, thanks for asking! 😄\n\nI'm always ready and excited to help! My circuits are running smoothly, and I'm here to assist you with anything related to the attendance system.\n\nHow can I help you today?`
+    },
+
+    yes: {
+        keywords: ['yes', 'yeah', 'yep', 'yup', 'sure', 'okay', 'ok', 'alright', 'fine', 'correct', 'right', 'affirmative'],
+        response: `Great! 👍\n\nWhat would you like to know or do next?\n\n💡 Try:\n• "Show my tasks today"\n• "Who is working now?"\n• "Help" for all commands`
+    },
+
+    no: {
+        keywords: ['no', 'nope', 'nah', 'not really', 'negative'],
+        response: `No problem! 👌\n\nIs there something else I can help you with?\n\nFeel free to ask me anything about the attendance system!`
+    },
+
+    confused: {
+        keywords: ['i dont understand', "i don't understand", 'confused', 'what do you mean', 'huh', 'not clear', 'explain', 'can you explain'],
+        response: `Let me clarify! 🤔\n\nI can help you with:\n\n📊 LIVE MONITORING:\n• Check who's working now\n• View productivity reports\n• See student tasks in real-time\n\n📋 TASK TRACKING:\n• View your daily tasks\n• Check historical tasks\n• Query any student's tasks\n\n📚 SYSTEM GUIDES:\n• Registration help\n• IT procedures\n• Locations & team info\n\nTry asking: "Help" for the full list!\nOr just tell me what you need help with! 😊`
+    },
+
+    capabilities: {
+        keywords: ['what can you do', 'your capabilities', 'features', 'what do you know', 'abilities', 'can you help', 'functions'],
+        response: `🌟 Here's what I can do:\n\n🔍 REAL-TIME MONITORING:\n✅ Check who's working now\n✅ View productivity reports\n✅ Monitor active/idle students\n✅ Track live tasks\n\n📋 TASK MANAGEMENT:\n✅ Show your daily tasks\n✅ View historical tasks\n✅ Query any student's work\n✅ Generate task reports\n\n👥 STUDENT INFO:\n✅ Look up student details\n✅ Check hours & progress\n✅ View schedules\n✅ Monitor attendance\n\n📚 KNOWLEDGE BASE:\n✅ System tutorials\n✅ IT procedures\n✅ Room locations\n✅ Team information\n\n💬 Try asking me anything! Type "help" for detailed commands!`
+    },
+
     // ==================== SYSTEM BASICS ====================
     registration: {
         keywords: ['register', 'registration', 'sign up', 'new', 'first time', 'create account', 'how to register', 'register myself', 'sign me up', 'enroll', 'join system'],
@@ -57,7 +269,7 @@ const chatKnowledgeBase = {
     // ==================== PEOPLE & TEAM ====================
     developer: {
         keywords: ['developer', 'who made', 'who created', 'jayson', 'tapia', 'jayson levin', 'creator', 'made this system', 'programmer', 'coder', 'built this'],
-        response: `👨‍💻 System Developer:\n\nJayson Levin Tapia - OJT Student & Lead Developer\n\nHe is an OJT student here at Concentrix Tera Tower who designed and developed this entire attendance management system. This includes the frontend, backend, security implementation, and UI/UX design.\n\n📧 You can reach him through the footer's social links!`
+        response: `👨‍💻 System Developer:\n\nJayson Levin Tapia - OJT Student & Lead Developer\n\nHe is an OJT student here at Concentrix Tera Tower who designed and developed this entire attendance management system. This includes the frontend, backend, security implementation, and UI/UX design.\n\n🔧 You can reach him through the footer's social links!`
     },
 
     betatesters: {
@@ -77,13 +289,13 @@ const chatKnowledgeBase = {
 
     seniors: {
         keywords: ['senior', 'joshua', 'ramil', 'cordejo', 'pangaral', 'who are the seniors', 'senior staff', 'who to approach'],
-        response: `👥 Senior IT Staff:\n\n• Joshua Cordejo - Senior\n• Ramil Pangaral - Senior\n\nThey are your go-to seniors for:\n- Badge ID updates\n- Schedule changes\n- Attendance corrections\n- TOTP resets\n- Daily IT guidance`
+        response: `👥 Senior IT Staff:\n\n• Joshua Cordero - Senior\n• Ramil Pangaral - Senior\n\nThey are your go-to seniors for:\n- Badge ID updates\n- Schedule changes\n- Attendance corrections\n- TOTP resets\n- Daily IT guidance`
     },
 
     // ==================== IT TASK GUIDES ====================
     walltowall: {
         keywords: ['wall to wall', 'walltowall', 'wall-to-wall', 'w2w', 'excel formula', 'vlookup', 'asset verification'],
-        response: `🏢 Wall to Wall Task Guide:\n\n📊 EXCEL FORMULA for fast productivity:\n\n=IFNA(VLOOKUP(LEFT(B2,6),Reference!A:B,2,0),\nIFNA(VLOOKUP(LEFT(B2,5),Reference!A:B,2,0),\nIFNA(VLOOKUP(LEFT(B2,4),Reference!A:B,2,0),\nIFNA(VLOOKUP(LEFT(B2,3),Reference!A:B,2,0),\nIFNA(VLOOKUP(LEFT(B2,2),Reference!A:B,2,0),\n"Not Found")))))\n\n📝 How to implement:\n1. Create a sheet named "Reference" with asset codes\n2. In your main sheet, put serial numbers in column B\n3. Paste this formula in column C (e.g., C2)\n4. Drag the formula down for all rows\n5. Formula will auto-match serial codes to asset info\n\n💡 This speeds up asset verification significantly!`
+        response: `🏢 Wall to Wall Task Guide:\n\n📊 EXCEL FORMULA for fast productivity:\n\n=IFNA(VLOOKUP(LEFT(B2,6),Reference!A:B,2,0),\nIFNA(VLOOKUP(LEFT(B2,5),Reference!A:B,2,0),\nIFNA(VLOOKUP(LEFT(B2,4),Reference!A:B,2,0),\nIFNA(VLOOKUP(LEFT(B2,3),Reference!A:B,2,0),\nIFNA(VLOOKUP(LEFT(B2,2),Reference!A:B,2,0),\n"Not Found")))))\n\n🔧 How to implement:\n1. Create a sheet named "Reference" with asset codes\n2. In your main sheet, put serial numbers in column B\n3. Paste this formula in column C (e.g., C2)\n4. Drag the formula down for all rows\n5. Formula will auto-match serial codes to asset info\n\n💡 This speeds up asset verification significantly!`
     },
 
     compliance: {
@@ -98,7 +310,7 @@ const chatKnowledgeBase = {
 
     passwords: {
         keywords: ['password', 'admin password', 'login', 'credentials', 'pass', 'passcode', 'need password'],
-        response: `🔐 About Passwords:\n\nI cannot provide any passwords or credentials for security reasons.\n\nFor password-related concerns:\n👉 Contact your seniors who are onsite:\n  • Joshua Cordejo\n  • Ramil Pangaral\n\nThey will assist you with:\n- Admin account access\n- System passwords\n- Reset credentials\n\nNever share your personal passwords with anyone!`
+        response: `🔐 About Passwords:\n\nI cannot provide any passwords or credentials for security reasons.\n\nFor password-related concerns:\n👉 Contact your seniors who are onsite:\n  • Joshua Cordero\n  • Ramil Pangaral\n\nThey will assist you with:\n- Admin account access\n- System passwords\n- Reset credentials\n\nNever share your personal passwords with anyone!`
     },
 
     // ==================== LOCATIONS ====================
@@ -123,7 +335,7 @@ const chatKnowledgeBase = {
         response: `🤫 About "Buday"...\n\nAh, you're asking about the mysterious word "BUDAY"! Well, I cannot give you the real definition because Kenneth might find out, and this is a SECRET word that Kenneth will NEVER know! 😏\n\nIt's a highly classified term in the intern vocabulary... 🕵️‍♂️\n\n🤔 Do you REALLY want to know what "buday" means?`,
         requiresConfirmation: true,
         confirmYes: `😂 Hahaha! Nice try!\n\nIf you really want to know the meaning of "buday," you need to:\n\n👉 Ask JUSTINE BAILE directly!\n\nOnly Justine holds the sacred knowledge of this secret word! Good luck getting it out of them! 🤣\n\n(And remember - DON'T tell Kenneth!)`,
-        confirmNo: `🤷‍♂️ Sayang! Hahaha!\n\nMaybe next time you'll be brave enough to discover the truth! 😄\n\nThe mystery of "buday" remains... unsolved! 🔍`
+        confirmNo: `🤷‍♂️ Sayang! Hahaha!\n\nMaybe next time you'll be brave enough to discover the truth! 😄\n\nThe mystery of "buday" remains... unsolved! 🕵️`
     },
 
     concentrix: {
@@ -175,11 +387,11 @@ const chatKnowledgeBase = {
         isDatabase: true
     },
 
-currentStatus: {
-    keywords: ['status', 'currently working', 'timed in', 'on duty', 'at work', 'badge status', 'is badge working', 'check badge'],
-    response: 'DATABASE_QUERY_STATUS',
-    isDatabase: true
-},
+    currentStatus: {
+        keywords: ['status', 'currently working', 'timed in', 'on duty', 'at work', 'badge status', 'is badge working', 'check badge'],
+        response: 'DATABASE_QUERY_STATUS',
+        isDatabase: true
+    },
 
     scheduleQuery: {
         keywords: ['schedule', 'what time', 'shift', 'working hours'],
@@ -187,9 +399,28 @@ currentStatus: {
         isDatabase: true
     },
 
+    // ==================== TASK QUERY HANDLERS ====================
+    myTasksToday: {
+        keywords: ['my tasks today', 'show my tasks', 'tasks today', 'what did i do today', 'today tasks', 'my work today'],
+        response: 'TASK_QUERY_TODAY',
+        isDatabase: true
+    },
+
+    myTasksYesterday: {
+        keywords: ['my tasks yesterday', 'tasks yesterday', 'what did i do yesterday', 'yesterday tasks', 'my work yesterday'],
+        response: 'TASK_QUERY_YESTERDAY',
+        isDatabase: true
+    },
+
+    tasksForDate: {
+        keywords: ['tasks for', 'tasks on', 'get tasks', 'show tasks for date', 'tasks date'],
+        response: 'TASK_QUERY_DATE',
+        isDatabase: true
+    },
+
     help: {
         keywords: ['help', 'guide', 'how', 'tutorial', 'instructions', 'need help', 'assist me', 'what can you do'],
-        response: `Need more help?\n\n📚 Click the help icon (?) in the top-left of the main card for a complete guide\n\n💬 Ask me about:\n\n📊 LIVE DATA QUERIES:\n• "Who is badge [4-digit]?"\n• "How many hours remaining?"\n• "Who is working now?"\n• "Show productivity report"\n• "Who is idle?"\n• "Live tasks monitor"\n• "Corrections needed"\n\n📋 SYSTEM BASICS:\n• Registration & Setup\n• Tasks & Logging\n• Badge Issues\n• Schedule & Hours\n• Reports & Downloads\n\n🔧 IT TASKS:\n• Wall to Wall\n• Compliance\n• Profile Remover\n\n👥 PEOPLE & TEAM\n🏢 ROOM LOCATIONS\n😴 SLEEPING QUARTERS\n🎮 GAMING SPOTS\n\n🎭 Easter Egg: Try "self destruct"!`
+        response: `Need more help?\n\n📚 Click the help icon (?) in the top-left of the main card for a complete guide\n\n💬 Ask me about:\n\n📊 LIVE DATA QUERIES:\n• "Who is badge [4-digit]?"\n• "How many hours remaining?"\n• "Who is working now?"\n• "Show productivity report"\n• "Who is idle?"\n• "Live tasks monitor"\n• "Corrections needed"\n\n📋 TASK QUERIES:\n• "Show my tasks today"\n• "My tasks yesterday"\n• "Get tasks for badge 9455 today"\n• "Tasks for 2025-01-15"\n• "My tasks last week"\n\n📋 SYSTEM BASICS:\n• Registration & Setup\n• Tasks & Logging\n• Badge Issues\n• Schedule & Hours\n• Reports & Downloads\n\n🔧 IT TASKS:\n• Wall to Wall\n• Compliance\n• Profile Remover\n\n👥 PEOPLE & TEAM\n🏢 ROOM LOCATIONS\n😴 SLEEPING QUARTERS\n🎮 GAMING SPOTS\n\n🎭 Easter Egg: Try "self destruct"!`
     }
 };
 
@@ -198,6 +429,33 @@ currentStatus: {
 function extractBadgeNumber(message) {
     const badgeMatch = message.match(/\b\d{4}\b/);
     return badgeMatch ? badgeMatch[0] : null;
+}
+
+function extractDate(message) {
+    // Match YYYY-MM-DD format
+    const isoDateMatch = message.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+    if (isoDateMatch) {
+        return isoDateMatch[0];
+    }
+
+    // Match relative dates
+    if (message.includes('today')) {
+        return new Date().toISOString().split('T')[0];
+    }
+    if (message.includes('yesterday')) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        return yesterday.toISOString().split('T')[0];
+    }
+
+    // Match "last week"
+    if (message.includes('last week')) {
+        const lastWeek = new Date();
+        lastWeek.setDate(lastWeek.getDate() - 7);
+        return lastWeek.toISOString().split('T')[0];
+    }
+
+    return null;
 }
 
 function formatHours(hours) {
@@ -224,6 +482,19 @@ function formatTime(timeString) {
     }
 }
 
+function formatDate(dateString) {
+    if (!dateString) return '';
+    try {
+        return new Date(dateString).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+    } catch {
+        return 'Invalid date';
+    }
+}
+
 function formatTimeAgo(timeString) {
     if (!timeString) return '';
     try {
@@ -242,6 +513,26 @@ function formatTimeAgo(timeString) {
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Get current time and date
+function getCurrentTimeDate() {
+    const now = new Date();
+
+    const options = {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+    };
+
+    const dateTimeString = now.toLocaleString('en-US', options);
+
+    return `🕐 Current Time & Date:\n\n${dateTimeString}\n\n📍 Location: Concentrix Tera Tower, Bridgetowne\n⏰ Timezone: Philippine Time (PHT / UTC+8)\n\n💡 Tip: Make sure you're tracking your hours accurately!`;
 }
 
 // ==================== DATABASE QUERY FUNCTIONS ====================
@@ -289,7 +580,6 @@ async function fetchProductivityReport() {
 
         const activeSessions = await response.json();
 
-        // Fetch task data for each active student
         const productivityData = await Promise.all(
             activeSessions.map(async (session) => {
                 try {
@@ -329,12 +619,74 @@ async function fetchCorrectionsNeeded() {
     }
 }
 
+// ==================== TASK QUERY FUNCTIONS ====================
+
+async function fetchTasksForStudent(idBadge, date) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/tasks/report/student/${idBadge}?date=${date}`);
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch tasks');
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error fetching tasks:', error);
+        return { error: 'Unable to fetch tasks. Please try again later.' };
+    }
+}
+
+async function fetchAllTasksForDate(date) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/tasks/report/date?date=${date}`);
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch tasks for date');
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error fetching tasks for date:', error);
+        return { error: 'Unable to fetch tasks. Please try again later.' };
+    }
+}
+
 // ==================== RESPONSE GENERATOR ====================
 
 async function generateResponse(question) {
     const lowerQuestion = question.toLowerCase();
 
     // === SPECIAL COMMANDS ===
+
+    // 1. Goodbye/Exit - Ghost Animation
+    if (lowerQuestion.includes('bye') ||
+        lowerQuestion.includes('goodbye') ||
+        lowerQuestion.includes('see you') ||
+        lowerQuestion.includes('quit') ||
+        lowerQuestion.includes('exit') ||
+        lowerQuestion.includes('close') ||
+        lowerQuestion.includes('later') ||
+        lowerQuestion.includes('farewell') ||
+        (lowerQuestion.includes('see') && lowerQuestion.includes('ya')) ||
+        lowerQuestion.includes('peace out') ||
+        lowerQuestion.includes('gtg') ||
+        lowerQuestion.includes('gotta go') ||
+        lowerQuestion.includes('take care') ||
+        (lowerQuestion.includes('im') && lowerQuestion.includes('out')) ||
+        (lowerQuestion.includes("i'm") && lowerQuestion.includes('out'))) {
+        setTimeout(() => initiateGhostGoodbye(), 500);
+        return '👋 Goodbye! Thanks for chatting!\n\nHave a great day! 🌟\n\nCome back anytime you need help! 😊';
+    }
+
+    // 2. Time and Date Query
+    if ((lowerQuestion.includes('time') || lowerQuestion.includes('date') || lowerQuestion.includes('day')) &&
+        (lowerQuestion.includes('what') || lowerQuestion.includes('current') || lowerQuestion.includes('now') || lowerQuestion.includes('today'))) {
+        return getCurrentTimeDate();
+    }
+
+    // 3. Self Destruct
     if (lowerQuestion.includes('self destruct') ||
         lowerQuestion.includes('selfdestruct') ||
         lowerQuestion.includes('self-destruct')) {
@@ -342,8 +694,181 @@ async function generateResponse(question) {
         return '🚨 Self-destruct sequence activated!\n\nInitiating countdown...';
     }
 
+    // 4. Buday Easter Egg
     if (lowerQuestion.includes('buday')) {
         return 'SHOW_BUDAY_BUTTONS:' + chatKnowledgeBase.buday.response;
+    }
+
+    // === TASK QUERIES ===
+
+    // 1. My tasks today
+    if (lowerQuestion.includes('my tasks today') ||
+        lowerQuestion.includes('show my tasks') ||
+        lowerQuestion.includes('tasks today') ||
+        (lowerQuestion.includes('today') && lowerQuestion.includes('task'))) {
+
+        let badge = extractBadgeNumber(lowerQuestion);
+
+        if (!badge && currentContext.lastBadgeQueried) {
+            badge = currentContext.lastBadgeQueried;
+        }
+
+        if (!badge) {
+            return 'Please specify a badge number first.\n\nExample: "Who is badge 9455?" then ask "Show my tasks today"';
+        }
+
+        const today = new Date().toISOString().split('T')[0];
+        const tasksData = await fetchTasksForStudent(badge, today);
+
+        if (tasksData.error) {
+            return `❌ ${tasksData.error}`;
+        }
+
+        if (!tasksData.success || !tasksData.report) {
+            return `📋 No tasks found for badge ${badge} today (${formatDate(today)}).\n\n💡 Make sure to log your tasks throughout the day!`;
+        }
+
+        const report = tasksData.report;
+
+        if (report.tasks.length === 0) {
+            return `📋 Tasks for Badge ${badge} - Today:\n\n👤 Student: ${report.studentName}\n📅 Date: ${formatDate(today)}\n\n⚠️ No tasks logged yet today.\n\nRemember to add your tasks as you complete them!`;
+        }
+
+        let response = `📋 Tasks for Badge ${badge} - Today:\n\n`;
+        response += `👤 Student: ${report.studentName}\n`;
+        response += `📅 Date: ${formatDate(today)}\n`;
+        response += `⏰ Time In: ${formatTime(report.timeIn)}\n`;
+        response += `${report.timeOut ? `🏁 Time Out: ${formatTime(report.timeOut)}\n` : '🟢 Currently Working\n'}`;
+        response += `📊 Total Tasks: ${report.tasks.length}\n\n`;
+        response += `✅ Completed Tasks:\n`;
+
+        report.tasks.forEach((task, index) => {
+            response += `${index + 1}. ${formatTime(task.completedAt)} - ${task.taskDescription}\n`;
+        });
+
+        return response;
+    }
+
+    // 2. My tasks yesterday
+    if (lowerQuestion.includes('yesterday') && lowerQuestion.includes('task')) {
+
+        let badge = extractBadgeNumber(lowerQuestion);
+
+        if (!badge && currentContext.lastBadgeQueried) {
+            badge = currentContext.lastBadgeQueried;
+        }
+
+        if (!badge) {
+            return 'Please specify a badge number first.\n\nExample: "Who is badge 9455?" then ask "My tasks yesterday"';
+        }
+
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayDate = yesterday.toISOString().split('T')[0];
+
+        const tasksData = await fetchTasksForStudent(badge, yesterdayDate);
+
+        if (tasksData.error) {
+            return `❌ ${tasksData.error}`;
+        }
+
+        if (!tasksData.success || !tasksData.report) {
+            return `📋 No tasks found for badge ${badge} yesterday (${formatDate(yesterdayDate)}).\n\n💡 You may not have worked yesterday or tasks weren't logged.`;
+        }
+
+        const report = tasksData.report;
+
+        if (report.tasks.length === 0) {
+            return `📋 Tasks for Badge ${badge} - Yesterday:\n\n👤 Student: ${report.studentName}\n📅 Date: ${formatDate(yesterdayDate)}\n\n⚠️ No tasks were logged yesterday.`;
+        }
+
+        let response = `📋 Tasks for Badge ${badge} - Yesterday:\n\n`;
+        response += `👤 Student: ${report.studentName}\n`;
+        response += `📅 Date: ${formatDate(yesterdayDate)}\n`;
+        response += `⏰ Time In: ${formatTime(report.timeIn)}\n`;
+        response += `🏁 Time Out: ${formatTime(report.timeOut)}\n`;
+        response += `📊 Total Tasks: ${report.tasks.length}\n\n`;
+        response += `✅ Completed Tasks:\n`;
+
+        report.tasks.forEach((task, index) => {
+            response += `${index + 1}. ${formatTime(task.completedAt)} - ${task.taskDescription}\n`;
+        });
+
+        return response;
+    }
+
+    // 3. Tasks for specific date or badge
+    if ((lowerQuestion.includes('tasks for') || lowerQuestion.includes('get tasks') || lowerQuestion.includes('show tasks')) &&
+        (extractBadgeNumber(lowerQuestion) || extractDate(lowerQuestion))) {
+
+        const badge = extractBadgeNumber(lowerQuestion);
+        const date = extractDate(lowerQuestion);
+
+        if (!badge && !date) {
+            return 'Please specify either:\n• A badge number: "tasks for badge 9455"\n• A date: "tasks for 2025-01-15"\n• Both: "tasks for badge 9455 on 2025-01-15"';
+        }
+
+        // If only date provided, show all students' tasks
+        if (!badge && date) {
+            const allTasksData = await fetchAllTasksForDate(date);
+
+            if (allTasksData.error) {
+                return `❌ ${allTasksData.error}`;
+            }
+
+            if (allTasksData.reports.length === 0) {
+                return `📋 No tasks found for ${formatDate(date)}.\n\n💡 No students worked or logged tasks on this date.`;
+            }
+
+            let response = `📋 All Tasks for ${formatDate(date)}:\n\n`;
+            response += `📊 Total Students: ${allTasksData.totalStudents}\n\n`;
+
+            allTasksData.reports.forEach((report, idx) => {
+                response += `${idx + 1}. ${report.studentName} (${report.idBadge}):\n`;
+                response += `   📋 Tasks: ${report.tasks.length}\n`;
+                if (report.tasks.length > 0) {
+                    const firstTask = report.tasks[0].taskDescription.substring(0, 40);
+                    response += `   📝 First: ${firstTask}${report.tasks[0].taskDescription.length > 40 ? '...' : ''}\n`;
+                }
+                response += '\n';
+            });
+
+            response += `💡 Ask "tasks for badge [4-digit] on ${date}" for specific student details!`;
+
+            return response;
+        }
+
+        // If badge provided (with or without date)
+        const targetDate = date || new Date().toISOString().split('T')[0];
+        const tasksData = await fetchTasksForStudent(badge, targetDate);
+
+        if (tasksData.error) {
+            return `❌ ${tasksData.error}`;
+        }
+
+        if (!tasksData.success || !tasksData.report) {
+            return `📋 No tasks found for badge ${badge} on ${formatDate(targetDate)}.\n\n💡 Student may not have worked on this date.`;
+        }
+
+        const report = tasksData.report;
+
+        if (report.tasks.length === 0) {
+            return `📋 Tasks for Badge ${badge}:\n\n👤 Student: ${report.studentName}\n📅 Date: ${formatDate(targetDate)}\n\n⚠️ No tasks were logged on this date.`;
+        }
+
+        let response = `📋 Tasks for Badge ${badge}:\n\n`;
+        response += `👤 Student: ${report.studentName}\n`;
+        response += `📅 Date: ${formatDate(targetDate)}\n`;
+        response += `⏰ Time In: ${formatTime(report.timeIn)}\n`;
+        response += `${report.timeOut ? `🏁 Time Out: ${formatTime(report.timeOut)}\n` : '🟢 Currently Working\n'}`;
+        response += `📊 Total Tasks: ${report.tasks.length}\n\n`;
+        response += `✅ Completed Tasks:\n`;
+
+        report.tasks.forEach((task, index) => {
+            response += `${index + 1}. ${formatTime(task.completedAt)} - ${task.taskDescription}\n`;
+        });
+
+        return response;
     }
 
     // === ADMIN MONITORING QUERIES ===
@@ -365,7 +890,6 @@ async function generateResponse(question) {
             return `📊 Productivity Report:\n\n⚪ No students currently working.\n\nAll students have timed out or haven't started yet.`;
         }
 
-        // Categorize students
         const veryActive = productivityData.filter(s => s.taskCount >= 5);
         const active = productivityData.filter(s => s.taskCount >= 1 && s.taskCount < 5);
         const idle = productivityData.filter(s => s.taskCount === 0);
@@ -411,7 +935,6 @@ async function generateResponse(question) {
         const badge = extractBadgeNumber(lowerQuestion);
 
         if (badge) {
-            // Show tasks for specific student
             const productivityData = await fetchProductivityReport();
             const student = productivityData.find(s => s.idBadge === badge);
 
@@ -434,7 +957,6 @@ async function generateResponse(question) {
 
             return response;
         } else {
-            // Show all live tasks
             return `📋 For live task details:\n\n• "live tasks for badge [4-digit]"\n• "productivity report" - See all active students\n• "who is idle?" - Find students without tasks\n\n💡 Example: "live tasks for badge 9455"`;
         }
     }
@@ -552,24 +1074,25 @@ async function generateResponse(question) {
         const activeSession = await checkStudentStatusChatbot(badge);
 
         return `👤 Student Information:\n\n` +
-               `📛 Name: ${studentData.fullName}\n` +
-               `🆔 Badge ID: ${studentData.idBadge}\n` +
-               `📊 Total Hours: ${formatHours(studentData.totalAccumulatedHours)}\n` +
-               `${studentData.requiredHours ? `🎯 Required: ${formatHours(studentData.requiredHours)}\n` : ''}` +
-               `${studentData.completionPercentage ? `📈 Progress: ${studentData.completionPercentage.toFixed(1)}%\n` : ''}` +
-               `${activeSession ? '🟢 Status: CURRENTLY ON DUTY\n' : '⚪ Status: Not working now\n'}\n` +
-               `💡 You can now ask:\n` +
-               `• "How many hours remaining?"\n` +
-               `• "What's the schedule?"\n` +
-               `• "Is ${badge} working now?"`;
+            `📖 Name: ${studentData.fullName}\n` +
+            `🆔 Badge ID: ${studentData.idBadge}\n` +
+            `📊 Total Hours: ${formatHours(studentData.totalAccumulatedHours)}\n` +
+            `${studentData.requiredHours ? `🎯 Required: ${formatHours(studentData.requiredHours)}\n` : ''}` +
+            `${studentData.completionPercentage ? `📈 Progress: ${studentData.completionPercentage.toFixed(1)}%\n` : ''}` +
+            `${activeSession ? '🟢 Status: CURRENTLY ON DUTY\n' : '⚪ Status: Not working now\n'}\n` +
+            `💡 You can now ask:\n` +
+            `• "How many hours remaining?"\n` +
+            `• "What's the schedule?"\n` +
+            `• "Show my tasks today"\n` +
+            `• "Is ${badge} working now?"`;
     }
 
     // 2. Hours Remaining Query
     if ((lowerQuestion.includes('hours remaining') ||
-         lowerQuestion.includes('how many hours') ||
-         lowerQuestion.includes('remaining hours') ||
-         lowerQuestion.includes('hours left') ||
-         lowerQuestion.includes('progress')) && !lowerQuestion.includes('report')) {
+        lowerQuestion.includes('how many hours') ||
+        lowerQuestion.includes('remaining hours') ||
+        lowerQuestion.includes('hours left') ||
+        lowerQuestion.includes('progress')) && !lowerQuestion.includes('report')) {
 
         let badge = extractBadgeNumber(lowerQuestion);
 
@@ -589,22 +1112,22 @@ async function generateResponse(question) {
 
         if (!studentData.requiredHours) {
             return `📊 Hours Summary for Badge ${badge}:\n\n` +
-                   `👤 Student: ${studentData.fullName}\n` +
-                   `⏱️ Total Accumulated: ${formatHours(studentData.totalAccumulatedHours)}\n\n` +
-                   `ℹ️ No required hours set for this student yet.`;
+                `👤 Student: ${studentData.fullName}\n` +
+                `⏱️ Total Accumulated: ${formatHours(studentData.totalAccumulatedHours)}\n\n` +
+                `ℹ️ No required hours set for this student yet.`;
         }
 
         const remaining = studentData.hoursRemaining || 0;
         const estimatedDays = Math.ceil(remaining / 8);
 
         return `⏱️ Hours Summary for Badge ${badge}:\n\n` +
-               `👤 Student: ${studentData.fullName}\n` +
-               `📊 Total Accumulated: ${formatHours(studentData.totalAccumulatedHours)}\n` +
-               `🎯 Required Hours: ${formatHours(studentData.requiredHours)}\n` +
-               `📈 Progress: ${studentData.completionPercentage.toFixed(1)}%\n` +
-               `⏳ Remaining: ${formatHours(remaining)}\n` +
-               `📅 Estimated Days: ~${estimatedDays} days (8hrs/day)\n\n` +
-               `${remaining <= 0 ? '🎉 Completed! Ready for graduation!' : remaining < 40 ? '🔥 Almost there!' : '💪 Keep it up!'}`;
+            `👤 Student: ${studentData.fullName}\n` +
+            `📊 Total Accumulated: ${formatHours(studentData.totalAccumulatedHours)}\n` +
+            `🎯 Required Hours: ${formatHours(studentData.requiredHours)}\n` +
+            `📈 Progress: ${studentData.completionPercentage.toFixed(1)}%\n` +
+            `⏳ Remaining: ${formatHours(remaining)}\n` +
+            `📅 Estimated Days: ~${estimatedDays} days (8hrs/day)\n\n` +
+            `${remaining <= 0 ? '🎉 Completed! Ready for graduation!' : remaining < 40 ? '🔥 Almost there!' : '💪 Keep it up!'}`;
     }
 
     // 3. Current Status Query
@@ -626,14 +1149,12 @@ async function generateResponse(question) {
             return 'Please specify a badge number.\n\nExample: "Is badge 9455 working now?" or "Status of badge 9455"';
         }
 
-        // Fetch student data first to get name
         const studentData = await fetchStudentData(badge);
 
         if (studentData.error) {
             return `❌ ${studentData.error}`;
         }
 
-        // Then check if they're currently working
         const activeSession = await checkStudentStatusChatbot(badge);
 
         if (activeSession) {
@@ -675,16 +1196,16 @@ async function generateResponse(question) {
 
         if (!studentData.scheduledStartTime || !studentData.scheduleActive) {
             return `📅 Schedule for ${studentData.fullName}:\n\n` +
-                   `⚠️ No active schedule set yet.\n\n` +
-                   `Contact admin to set up a work schedule.`;
+                `⚠️ No active schedule set yet.\n\n` +
+                `Contact admin to set up a work schedule.`;
         }
 
         return `📅 Schedule for ${studentData.fullName}:\n\n` +
-               `⏰ Start Time: ${studentData.scheduledStartTime}\n` +
-               `🏁 End Time: ${studentData.scheduledEndTime}\n` +
-               `⏱️ Grace Period: ${studentData.gracePeriodMinutes} minutes\n` +
-               `📊 Daily Hours: ${studentData.scheduledHoursPerDay?.toFixed(1)} hours\n` +
-               `✅ Status: ${studentData.scheduleActive ? 'Active' : 'Inactive'}`;
+            `⏰ Start Time: ${studentData.scheduledStartTime}\n` +
+            `🏁 End Time: ${studentData.scheduledEndTime}\n` +
+            `⏱️ Grace Period: ${studentData.gracePeriodMinutes} minutes\n` +
+            `📊 Daily Hours: ${studentData.scheduledHoursPerDay?.toFixed(1)} hours\n` +
+            `✅ Status: ${studentData.scheduleActive ? 'Active' : 'Inactive'}`;
     }
 
     // Fall back to keyword matching for non-database queries
@@ -718,22 +1239,54 @@ async function generateResponse(question) {
 
     // Enhanced default response
     return `I'm not sure about that specific question. Here are topics I can help with:\n\n` +
-           `📊 LIVE ADMIN MONITORING:\n` +
-           `• "Productivity report" - See who's active/idle\n` +
-           `• "Who is working now?" - List all active students\n` +
-           `• "Live tasks for badge [4-digit]" - View student tasks\n` +
-           `• "Corrections needed" - See pending fixes\n` +
-           `• "Who is idle?" - Find inactive students\n\n` +
-           `👤 STUDENT QUERIES:\n` +
-           `• "Who is badge [4-digit]?" - Get student info\n` +
-           `• "How many hours remaining?" - Check progress\n` +
-           `• "Is badge [4-digit] working now?" - Status\n` +
-           `• "What's the schedule?" - View work hours\n\n` +
-           `📋 SYSTEM GUIDES:\n` +
-           `• Registration, Tasks, Reports\n` +
-           `• IT Tasks (Wall to Wall, Profile Remover)\n` +
-           `• Locations, People, Help\n\n` +
-           `💡 Try: "productivity report" for live monitoring!`;
+        `📊 LIVE ADMIN MONITORING:\n` +
+        `• "Productivity report" - See who's active/idle\n` +
+        `• "Who is working now?" - List all active students\n` +
+        `• "Live tasks for badge [4-digit]" - View student tasks\n` +
+        `• "Corrections needed" - See pending fixes\n\n` +
+        `📋 TASK QUERIES:\n` +
+        `• "Show my tasks today" - Your daily tasks\n` +
+        `• "My tasks yesterday" - Yesterday's work\n` +
+        `• "Tasks for badge 9455 today" - Any student\n` +
+        `• "Tasks for 2025-01-15" - Specific date\n\n` +
+        `👤 STUDENT QUERIES:\n` +
+        `• "Who is badge [4-digit]?" - Get student info\n` +
+        `• "How many hours remaining?" - Check progress\n` +
+        `• "Is badge [4-digit] working now?" - Status\n\n` +
+        `📋 SYSTEM GUIDES:\n` +
+        `• Registration, Tasks, Reports\n` +
+        `• IT Tasks, Locations, People\n\n` +
+        `💡 Try: "show my tasks today" for your daily work!`;
+}
+
+// ==================== GHOST GOODBYE ANIMATION ====================
+
+let isGhosting = false;
+
+async function initiateGhostGoodbye() {
+    if (isGhosting) return;
+    isGhosting = true;
+
+    const chatBox = document.getElementById('chatBox');
+    const chatHead = document.querySelector('.chat-head');
+
+    // Add ghost animation class
+    chatBox.classList.add('ghost-fade');
+
+    // Wait for animation
+    await sleep(2000);
+
+    // Close the chat
+    chatBox.classList.remove('open');
+    chatBox.classList.remove('ghost-fade');
+
+    // Reset flag
+    isGhosting = false;
+
+    // Restart tutorials after closing
+    setTimeout(() => {
+        startRandomTutorials();
+    }, 300000);
 }
 
 // ==================== SELF-DESTRUCT ANIMATION ====================
@@ -837,6 +1390,9 @@ async function sendMessage() {
 
     if (!message) return;
 
+    // Stop tutorials when user is actively chatting
+    stopRandomTutorials();
+
     addChatMessage(message, 'user');
     input.value = '';
 
@@ -853,6 +1409,12 @@ async function sendMessage() {
         } else {
             addChatMessage(response, 'bot');
         }
+
+        // Restart tutorials after user stops chatting (5 minutes)
+        setTimeout(() => {
+            startRandomTutorials();
+        }, 300000);
+
     } catch (error) {
         hideTypingIndicator();
         addChatMessage('❌ Oops! Something went wrong. Please try again.', 'bot');
@@ -860,12 +1422,30 @@ async function sendMessage() {
     }
 }
 
+// Start tutorials when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Chatbot initialized - starting tutorial clouds');
+    startRandomTutorials();
+});
+
 function toggleChat() {
     const chatBox = document.getElementById('chatBox');
+    const isOpening = !chatBox.classList.contains('open');
+
     chatBox.classList.toggle('open');
 
-    if (chatBox.classList.contains('open')) {
-        document.getElementById('chatInput').focus();
+    if (isOpening) {
+        const chatInput = document.getElementById('chatInput');
+        if (chatInput) {
+            chatInput.focus();
+        }
+        // Stop tutorials when chat is opened
+        stopRandomTutorials();
+    } else {
+        // Restart tutorials when chat is closed (after 5 minutes)
+        setTimeout(() => {
+            startRandomTutorials();
+        }, 300000);
     }
 }
 
@@ -876,15 +1456,23 @@ function handleChatEnter(event) {
 }
 
 function askQuestion(question) {
-    document.getElementById('chatInput').value = question;
-    sendMessage();
+    const chatInput = document.getElementById('chatInput');
+    if (chatInput) {
+        chatInput.value = question;
+        sendMessage();
+    }
 }
 
-function addChatMessage(text, type, showBudayButtons = false) {
+function addChatMessage(text, type, showBudayButtons = false, isTutorial = false) {
     const messagesContainer = document.getElementById('chatMessages');
 
     const messageDiv = document.createElement('div');
     messageDiv.className = `chat-message ${type}-message`;
+
+    // Add special styling for tutorial messages
+    if (isTutorial) {
+        messageDiv.classList.add('tutorial-message');
+    }
 
     const avatar = document.createElement('div');
     avatar.className = 'message-avatar';
@@ -924,6 +1512,11 @@ function addChatMessage(text, type, showBudayButtons = false) {
 
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+    // Add entrance animation for tutorial messages
+    if (isTutorial) {
+        messageDiv.style.animation = 'slideInFromRight 0.5s ease-out';
+    }
 }
 
 function handleBudayChoice(choice) {
@@ -983,3 +1576,9 @@ function hideTypingIndicator() {
         indicator.remove();
     }
 }
+
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Don't start tutorials immediately - wait for user to open chat
+    console.log('Chatbot initialized - tutorials will start when chat is opened');
+});
